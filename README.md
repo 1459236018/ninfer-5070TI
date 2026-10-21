@@ -231,22 +231,22 @@ Release `v2026.10.21` 的三个附件，**发布时的 SHA256**（可直接与 G
 
 | 文件 | 字节数 | SHA256 |
 |---|---:|---|
-| `ninfer-engine-pack-20261021.zip` | 888,764,000 | `528071887B59B6B6F9FB442945B0098888423F5A10EAACF35DC327B504B29CF3` |
-| `ninfer-engine-pack-20261021.zip.manifest.txt` | 5,257 | `07847A11BE6DD3FA1AEC864415C4FABD8CA43A87B5728B2DA1B429F72B87F5DC` |
-| `ninfer-engine-pack-20261021.zip.sha256` | 99 | `71F85CE8D3CBD70EB97BC61FC98127858BE255A3394DAAD1F46BFBB2B2630923` |
+| `ninfer-engine-pack-20261021.zip` | 888,767,512 | `7BE668694CFD97D404096C26C3060B7BA0FB36B897E4645813D81AFC3DBC95FE` |
+| `ninfer-engine-pack-20261021.zip.manifest.txt` | 5,358 | `E534E998DEDC6179FAE8D727D92D84C1B15786C37FF350BA673CF3D1D83BCB75` |
+| `ninfer-engine-pack-20261021.zip.sha256` | 99 | `D1EB92FCC0F6BF235CB1BE9C71D88ABBBF78EB8B22F10E1C3AED7C53062D2BC8` |
 
 一条命令核对下载下来的 zip：
 
 ```powershell
 (Get-FileHash .\ninfer-engine-pack-20261021.zip -Algorithm SHA256).Hash
-# 应当输出 528071887B59B6B6F9FB442945B0098888423F5A10EAACF35DC327B504B29CF3
+# 应当输出 7BE668694CFD97D404096C26C3060B7BA0FB36B897E4645813D81AFC3DBC95FE
 ```
 
-> **GitHub 附件页显示的 `847.59 MB` 是按 1024 进制算的**，与上表 888,764,000 字节是同一个东西，不是对不上。
+> **GitHub 附件页显示的 `847.59 MB` 是按 1024 进制算的**，与上表 888,767,512 字节是同一个东西，不是对不上。
 
 ### 3. 分发包内部（逐文件）
 
-zip 解开后，`.manifest.txt` 列出**包内每个文件**的 SHA256 与字节数（51 条）。核对单个文件：
+zip 解开后，`.manifest.txt` 列出**包内每个文件**的 SHA256 与字节数（52 条）。核对单个文件：
 
 ```powershell
 Select-String -Path .\ninfer-engine-pack-20261021.zip.manifest.txt -Pattern 'AGENTS.md'
@@ -255,6 +255,10 @@ Select-String -Path .\ninfer-engine-pack-20261021.zip.manifest.txt -Pattern 'AGE
 (Get-FileHash .\AGENTS.md -Algorithm SHA256).Hash
 # 与上一行那个哈希不同 => 文件被改过
 ```
+
+> **`.manifest.txt` 是 zip 自己的逐文件清单**（按解压后的字节算），和包内的 `docs/SHA256SUMS.txt` 是两回事：
+> 后者只覆盖 `engine/*.dll` + `docs/*` 共 17 个文件，且同样按磁盘原样字节算。
+> 解压后跑一次 `powershell -File .\verify-kit-manifest.ps1 -Kit .` 就同时验了这两层里属于它的那层。
 
 **为什么写进 README**：附件可以被替换，哈希写死在仓库里就换不掉了 ——
 谁改了任何一个字节，这里的三行就对不上。
