@@ -22,7 +22,8 @@
 param(
   [Parameter(Mandatory = $true)][string]$Exe,
   [Parameter(Mandatory = $true)][string]$Tag,
-  [string]$Model = 'E:\betakit-ptq1-v1\models\bonsai2_27b_ternary_ptq1_mtp.ninfer',
+  [string]$Model = '',          # REQUIRED in practice: pass -Model <path to your .ninfer>.
+                                # (Was a fixed absolute path on the build machine; no model ships in this pack.)
   [int]$Port = 8095,
   [int]$MaxContext = 65536,     # kept modest so the RING HOST-BUDGET GUARD is satisfiable:
                                 # it needs host_pages + pool_pages >= page_count(max_context)
@@ -31,13 +32,18 @@ param(
   [int]$SmallPool = 2048,       # prompt will NOT fit  -> warning required
   [int]$BigPool = 32768,        # same prompt DOES fit -> warning forbidden
   [int]$Filler = 400,           # ~4.2k-token prompt
-  [int]$ReadyTimeoutSec = 300
+  [int]$ReadyTimeoutSec = 300,
+  [string]$OutRoot = (Join-Path $PSScriptRoot '_verify')   # where the per-arm artifacts go
 )
 $ErrorActionPreference = 'Continue'
 # The delivery ships the model under this name; accept either spelling.
 if (-not (Test-Path -LiteralPath $Model)) {
   $alt = $Model -replace '_mtp\.ninfer$', '_native_mtp.ninfer'
   if (Test-Path -LiteralPath $alt) { $Model = $alt }
+}
+if ([string]::IsNullOrWhiteSpace($Model)) {
+  "REFUSE: -Model is required (this pack ships no model weights; point it at your .ninfer)"
+  exit 3
 }
 if (-not (Test-Path -LiteralPath $Exe))   { "REFUSE: missing $Exe"; exit 3 }
 if (-not (Test-Path -LiteralPath $Model)) { "REFUSE: missing $Model"; exit 3 }
@@ -58,7 +64,9 @@ if ($MissingDll.Count -eq 0) {
 }
 "runtime dlls beside the exe: $($MissingDll.Count)"
 
-$Out = Join-Path 'E:\infer-build\fusion-master\needle' $Tag
+# Output root for the acceptance run. Defaults to .\_verify\<Tag> beside this script.
+# (Was a fixed absolute path on the original build machine; overridable with -OutRoot.)
+$Out = Join-Path $OutRoot $Tag
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $Fail = 0
 

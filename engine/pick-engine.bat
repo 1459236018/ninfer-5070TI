@@ -6,8 +6,8 @@ REM  Called by the start-*.bat launchers:  call "%~dp0engine\pick-engine.bat"
 REM  On success it leaves %ENGINE% set to the full path of the right binary
 REM  (that is what the "endlocal & set" at the bottom is for).
 REM
-REM  Origin: our own arch-selection case, E:\infer-build\archsel\verify120.sel.bat
-REM  (2026-09), extended from two architectures to three.
+REM  Origin: our own arch-selection case (2026-09),
+REM  extended from two architectures to three.
 REM
 REM  Why one binary per architecture -- the comment from that case, verbatim:
 REM    "Arch-specific binaries; neither carries PTX for the other arch, so the wrong
