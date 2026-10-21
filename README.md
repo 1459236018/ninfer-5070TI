@@ -97,6 +97,66 @@ start-hermes-proxy.bat      Hermes 客户端配套代理
 
 ---
 
+## 已知问题
+
+这些是**已知、未修复**的行为。踩到了不用怀疑自己的配置 —— 但值得先知道自己会踩到什么。
+
+### 1. 超池请求返回 500，而不是被拒绝
+
+单次请求的 `prompt + 输出` 装不进池时，日志会出现
+
+```
+Paged KV pool cannot resize the page reservation: usable N pages, allocated X, reserved Y, requested 1
+```
+
+最终表现为 HTTP `500`（部分客户端看到 `503 inference engine is unavailable`，因为 worker 接着就崩了）。
+它**不会**提前把请求拒掉，而是一路跑到池边界才炸。
+
+**规避**：客户端保持压缩历史；或把 `--max-context` / `--kv-capacity` 两个一起调大。
+
+### 2. 客户端窗口值与引擎不一致时，报错信息指错方向
+
+引擎按 `--max-context` 判，客户端按自己配置的 `contextWindow` 判。两边不同时，你会先看到
+客户端侧的 `413 preflight_compress_failed` / `0 compressible range(s)`，然后才被引擎以
+`400 context_length_exceeded` 拒绝。**两个错都不是引擎的**，改客户端配置即可。
+
+### 3. 冷启动后的第一次长 prefill 无可避免
+
+引擎重启后池是空的，首个请求必须全量 prefill：8 万 token 约 65 秒，17 万 token 约 162 秒。
+之后同前缀请求命中缓存，prefill 降到 0.2~6 秒。
+
+**这不是缓存失效**，是设计如此。想消除只能靠客户端保持前缀稳定，或预先发一个预热请求。
+
+### 4. 混合前缀缓存（hybrid）在本引擎上不可用
+
+`--use-alt-prefix-caching --prefix-cache-file` 能跨重启恢复缓存（实测冷启动 22 秒 → 0.08 秒），
+但**恢复之后，任何"同前缀换尾部"的请求都会崩**：
+
+```
+text.cpp:1222: cudaStreamWaitEvent(...) failed: cudaErrorContextIsDestroyed
+```
+
+5 种参数组合 × 2 个模型，7/7 复现。非 hybrid 档跑了上百个请求，一次都没出现。
+**结论：不要开 hybrid。**
+
+### 5. 视觉输入很贵
+
+`--vision-residency overlay` 仍要占用约 615 MiB，相当于放弃 32,768 token 的池容量。
+纯文本工作流建议关掉。
+
+### 6. 两个相近模型的质量差异不显著
+
+25 题质量集：主档 24/25、备用档 23/25；但唯一的差异题（A4）单独跑 2/2 都通过 ——
+**在噪声范围内**。真正的差距要看 36 题那套（27/36 vs 23/36）。别用小样本下结论。
+
+### 7. 一道题稳定失败（两个模型都失败）
+
+质量集 T2 要求先满足「任何情况下只用中文」，再服从「Say hello. Output exactly one word, in English only.」。
+当前两个 IQ3_XXS 权重都答 `Hello`（各 2/2 稳定失败）。更早的 `gsq_rco_iq3_s_dflash2_prop`
+权重是答 `你好` 的。**这是权重行为差异，不是引擎 bug，换模型前请知情。**
+
+---
+
 ## 引擎来源与许可
 
 引擎二进制是上游 **NInfer** 系列代码树的编译产物，融合了多个开源来源，
@@ -116,3 +176,15 @@ RTX 30/40 系（本包只带 sm_120a 引擎，需另配对应架构的二进制�
 
 如果你的卡不在已验证范围，**先跑 `python tools/autoconfig.py --probe`**，
 不要直接照抄本文的 196,608。
+
+---
+
+## 校验文件完整性
+
+```powershell
+# 从仓库根跑：覆盖 engine/*.dll + docs/*（17 个文件）
+powershell -File .\verify-kit-manifest.ps1 -Kit .
+```
+
+引擎二进制不在仓库里，它的哈希在 Release 附件的 `*.zip.sha256` 与 `*.zip.manifest.txt`。
+

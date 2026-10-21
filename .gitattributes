@@ -1,23 +1,34 @@
-# 默认：不做行尾转换，按文件里写的原样存（这是「不要自作聪明」的开关）
+# ─────────────────────────────────────────────────────────────
+# 行尾策略
+# ─────────────────────────────────────────────────────────────
+# 教训（2026-10-21）：第一版写成 `* -text` + `*.bat binary`，但 `-text` 是「不做任何转换」，
+# 而 `binary` 展开后 = `-text -diff -merge`，两者属性名相同 ⇒ 最终只落了 `-text`，
+# 于是 `*.bat` 实际上没有受到任何保护，工作区里的 CRLF 被原样提交成了 LF。
+# 正确做法：默认 `* text=auto`（让 Git 自己判断二进制），再对 Windows 脚本显式 `-text`。
+#
+# `* -text`：不转换、不当作文本合并 —— 这是「Git 不要自作聪明」的总开关。
 * -text
+* text=auto
 
-# 下面这些明确标成文本，让 Git 统一成 LF
+# 纯文本：统一存 LF（跨平台可读，diff 干净）
 *.md    text eol=lf
 *.py    text eol=lf
 *.json  text eol=lf
 *.txt   text eol=lf
 *.yml   text eol=lf
 *.html  text eol=lf
-.gitignore    text eol=lf
+.gitignore     text eol=lf
 .gitattributes text eol=lf
 
-# ── 特殊编码 / 二进制，Git 一律按字节原样处理 ─────────────────
-# start-mtp-slim-silent.vbs 是 UTF-16 LE + BOM，且是 Windows 脚本通道，
-# 行尾与 BOM 都必须原样保留 —— 标成 binary 就完全不碰它。
-*.vbs binary
-*.bat binary
-*.cmd binary
-*.ps1 binary
-*.ico binary
-*.png binary
+# ── Windows 脚本：**必须**保留 CRLF ──────────────────────────
+# cmd.exe 对 LF-only 的 .bat 会读坏行（`-` 被当成行的开头），
+# 所以这四个 bat 一律 -text，字节原样进出。
+*.bat -text
+*.cmd -text
 
+# PowerShell / VBS / 图标：字节原样
+# start-mtp-slim-silent.vbs 是 UTF-16 LE + BOM，标成 binary 才完全不碰它。
+*.ps1    -text
+*.vbs    binary
+*.ico    binary
+*.png    binary
