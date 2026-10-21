@@ -52,8 +52,8 @@ RTX 5070 Ti 16 GB 上验证过。
     --default-reasoning-effort high --default-thinking-budget 2048
     --thinking-budget-message "..."（防止"思考了但不输出"，见文末第 9 节）
     环境变量 NINFER_KV_REUSE_HOSTBACKED=0（同上）
-    （模型用 mtp 变体 swift-qwen38-rco-iq3s.ninfer，另在
-    D:\infer-engine-sm120a 或 set MODEL 指定）
+    （模型用 mtp 变体 swift-qwen38-rco-iq3s.ninfer，另放在
+    本包目录下，或用 set MODEL 指定）
 
 注意：
 - dflash2 档启动后显存仅剩 ~0.22 GiB（runtime 779.8 MiB，实测），壁纸引擎/

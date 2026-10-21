@@ -36,3 +36,7 @@ venv/
 .idea/
 Thumbs.db
 desktop.ini
+
+# ── 规划与实验报告（含本机路径，只保留 reports/README.md 说明）────
+reports/*
+!reports/README.md
