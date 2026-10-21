@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>NInfer 引擎优化报告</title>
+</head>
+<body style="margin:0;padding:0;background:#f5f7fa;">
+<div style="font-family:system-ui,-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;color:#1f2937;padding:28px 20px;">
+<div style="max-width:980px;margin:0 auto;">
+
+  <h1 style="font-size:22px;margin:0 0 4px;">NInfer 引擎优化报告</h1>
+  <div style="font-size:13px;color:#6b7280;margin-bottom:20px;">
+    RTX 5070 Ti 16 GB · sm_120a · 引擎 ninfer-serve-120a.exe（1,329,240,576 B / E3E0486A…）· 实测 2026-10-11
+  </div>
+
+  <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-left:4px solid #059669;border-radius:8px;padding:14px 18px;margin:0 0 20px;">
+    <div style="font-size:15px;font-weight:700;color:#065f46;margin-bottom:8px;">★ 2026-10-19 增补：两条新优化</div>
+    <div style="font-size:13px;line-height:1.85;color:#1f2937;">
+      <b>1. 关掉 KVMem 环</b>（移除 <code style="background:#e5e7eb;padding:1px 4px;border-radius:3px;">NINFER_KV_WINDOW</code>）——
+      本档池容量等于逻辑上下文上限，环永远没有降级目标，纯属空转。实测引擎显存 <b>-186 MiB</b>、
+      冷 prefill <b>1.59k → 1.63~1.66k tok/s</b>、命中时 TTFT <b>98 → 70 ms</b>，前缀复用率<b>不变</b>（99.9% → 99.9%）。<br>
+      <b>2. 切到 hybrid 前缀缓存 + 优雅关闭</b>
+      （<code style="background:#e5e7eb;padding:1px 4px;border-radius:3px;">--use-alt-prefix-caching --prefix-cache-file</code>）——
+      退出时把 KV 块存盘、启动时读回。重启后首轮 <b>11.8 s → 0.16 s</b>（18,241 token，100% 命中）；
+      池仍 184,320、host 内存 4 GiB <b>不变</b>。前提是<b>从托盘正常退出</b> —— 引擎的优雅退出只认
+      <code style="background:#e5e7eb;padding:1px 4px;border-radius:3px;">CTRL_BREAK</code>，且信号必须
+      <code style="background:#e5e7eb;padding:1px 4px;border-radius:3px;">AttachConsole</code> 才送得到（托盘已改）。<br>
+      <b>代价</b>：缓存文件 0.6~1.2 GiB 磁盘；强杀 / 断电不写盘（只是退回上次保存的版本，不会坏）。<br>
+      <b>完整证据、配置与红线条</b>见同包 <code style="background:#e5e7eb;padding:1px 4px;border-radius:3px;">AGENTS.md</code> 的 §4 与 §5。
+    </div>
+  </div>
+
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px;">
+    <div style="flex:1;min-width:200px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:14px;">
+      <div style="font-size:12px;color:#047857;">解码吞吐</div>
+      <div style="font-size:24px;font-weight:700;color:#065f46;margin-top:2px;">161.8 → 286.0</div>
+      <div style="font-size:12px;color:#047857;margin-top:2px;">tok/s　<b>+77%</b>（同模型、同显存）</div>
+    </div>
+    <div style="flex:1;min-width:200px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:14px;">
+      <div style="font-size:12px;color:#3730a3;">主机内存（提交）</div>
+      <div style="font-size:24px;font-weight:700;color:#312e81;margin-top:2px;">35.8 → 23.5</div>
+      <div style="font-size:12px;color:#3730a3;margin-top:2px;">GiB　<b>−12.3 GiB</b></div>
+    </div>
+    <div style="flex:1;min-width:200px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:14px;">
+      <div style="font-size:12px;color:#9a3412;">长上下文追问</div>
+      <div style="font-size:24px;font-weight:700;color:#7c2d12;margin-top:2px;">178 ms / 0 错</div>
+      <div style="font-size:12px;color:#9a3412;margin-top:2px;">15.2k 前缀 · 缓存 99.8% · <b>无 500</b></div>
+    </div>
+  </div>
+
+  <h2 style="font-size:16px;margin:0 0 8px;">1. 基线 vs 优化后（数数字语料，1000 token 出，temperature 0）</h2>
+  <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px;">
+    <tr style="background:#f3f4f6;">
+      <th style="text-align:left;padding:8px 10px;border:1px solid #e5e7eb;">配置</th>
+      <th style="text-align:right;padding:8px 10px;border:1px solid #e5e7eb;">decode tok/s</th>
+      <th style="text-align:right;padding:8px 10px;border:1px solid #e5e7eb;">prefill tok/s</th>
+      <th style="text-align:right;padding:8px 10px;border:1px solid #e5e7eb;">TTFT</th>
+      <th style="text-align:right;padding:8px 10px;border:1px solid #e5e7eb;">总耗时</th>
+      <th style="text-align:right;padding:8px 10px;border:1px solid #e5e7eb;">加载后显存</th>
+      <th style="text-align:right;padding:8px 10px;border:1px solid #e5e7eb;">接受率</th>
+    </tr>
+    <tr>
+      <td style="padding:7px 10px;border:1px solid #e5e7eb;">出货基线 <code>draft 4</code></td>
+      <td style="padding:7px 10px;border:1px solid #e5e7eb;text-align:right;">161.8</td>
+      <td style="padding:7px 10px;border:1px solid #e5e7eb;text-align:right;">1.21k</td>
+      <td style="padding:7px 10px;border:1px solid #e5e7eb;text-align:right;">958 ms</td>
+      <td style="padding:7px 10px;border:1px solid #e5e7eb;text-align:right;">7.1 s</td>
+      <td style="padding:7px 10px;border:1px solid #e5e7eb;text-align:right;">15,594 MiB</td>
+      <td style="padding:7px 10px;border:1px solid #e5e7eb;text-align:right;">99.1%</td>
+    </tr>
+    <tr style="background:#f0fdf4;font-weight:600;">
+      <td style="padding:7px 10px;border:1px solid #e5e7eb;">★ 推荐 <code>draft 12 + host-kv 4096 + fast-prefill-kernel</code></td>
+      <td style="padding:7px 10px;border:1px solid #e5e7eb;text-align:right;">286.0</td>
+      <td style="padding:7px 10px;border:1px solid #e5e7eb;text-align:right;">1.45k</td>
+      <td style="padding:7px 10px;border:1px solid #e5e7eb;text-align:right;">800 ms</td>
+      <td style="padding:7px 10px;border:1px solid #e5e7eb;text-align:right;">4.3 s</td>
+      <td style="padding:7px 10px;border:1px solid #e5e7eb;text-align:right;">~15.6 GiB</td>
+      <td style="padding:7px 10px;border:1px solid #e5e7eb;text-align:right;">87.4%</td>
+    </tr>
+  </table>
+  <div style="font-size:12px;color:#6b7280;margin-bottom:20px;">
+    三处改动：① <code>--draft-tokens 4→12</code>（+73% 解码，显存零代价）② <code>--host-kv-mib 16384→4096</code>（提交内存 −12.3 GiB，解码不掉）③ 新增 <code>--fast-prefill-kernel</code>（prefill +6%、解码 +2%，白赚）。
+  </div>
+
+  <h2 style="font-size:16px;margin:0 0 8px;">2. 全部实测（同一题面，逐条量过）</h2>
+  <table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:20px;">
+    <tr style="background:#f3f4f6;">
+      <th style="text-align:left;padding:7px 10px;border:1px solid #e5e7eb;">试验</th>
+      <th style="text-align:left;padding:7px 10px;border:1px solid #e5e7eb;">关键差异</th>
+      <th style="text-align:right;padding:7px 10px;border:1px solid #e5e7eb;">decode</th>
+      <th style="text-align:right;padding:7px 10px;border:1px solid #e5e7eb;">显存</th>
+      <th style="text-align:left;padding:7px 10px;border:1px solid #e5e7eb;">结论</th>
+    </tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">A</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">出货配置 draft 4</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">161.8</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">15,594</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">基线</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">B</td><td style="padding:6px 10px;border:1px solid #e5e7eb;"><b>draft 12</b></td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;"><b>274.9</b></td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">15,542</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">1.70×，显存零代价 → 采纳</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">J/O</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">B + fast-prefill + host-kv 4096</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;"><b>286.0</b></td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">15,587</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">再 +4%，提交内存 −12.3 GiB → 采纳</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">I</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">draft 15（上限）</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">275.8</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">15,563</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">≈12，接受率反降 → 弃</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">H</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">+ --mlp-a8-decode</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">275.4</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">15,496</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">无变化（解码带宽受限）→ 弃</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">P</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">+ --gdn-state-fp16</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">287.6</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">15,503</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">主机仅省 0.7 GiB，性价比低 → 可选</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">D/K</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">mtp 模型 + CUDA graph</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">180.4</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;"><b>14,586</b></td><td style="padding:6px 10px;border:1px solid #e5e7eb;">省 ~1 GiB 显存，但慢 37% → 作"省显存档"</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">C</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">dflash2 + CUDA graph</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;color:#b91c1c;">拒绝</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">—</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">需 1.80 GiB 预留，仅 ~0.9 GiB 可用</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">F</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">--kv-capacity 16384</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;color:#b91c1c;">拒绝</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">—</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">需 1.06 GiB 预留 → 旧 README 的"提到 16384"不适用本卡</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">G</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">mtp+graph+draft 12</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;color:#b91c1c;">拒绝</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">—</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">需 2.89 GiB，缺 ~0.2 GiB</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">E</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">draft 16</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;color:#b91c1c;">非法</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">—</td><td style="padding:6px 10px;border:1px solid #e5e7eb;"><code>--draft-tokens</code> 合法区间 1..15</td></tr>
+  </table>
+
+  <h2 style="font-size:16px;margin:0 0 8px;">3. 长上下文与追问验证（配置 O，无 500）</h2>
+  <table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:20px;">
+    <tr style="background:#f3f4f6;">
+      <th style="text-align:left;padding:7px 10px;border:1px solid #e5e7eb;">场景</th>
+      <th style="text-align:left;padding:7px 10px;border:1px solid #e5e7eb;">题面 token</th>
+      <th style="text-align:right;padding:7px 10px;border:1px solid #e5e7eb;">prefill</th>
+      <th style="text-align:right;padding:7px 10px;border:1px solid #e5e7eb;">TTFT</th>
+      <th style="text-align:left;padding:7px 10px;border:1px solid #e5e7eb;">结果</th>
+    </tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">首轮</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">11,401</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">1.60k</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">7.2 s</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">200 · 答对 PONG</td></tr>
+    <tr style="background:#f0fdf4;"><td style="padding:6px 10px;border:1px solid #e5e7eb;">追问</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">11,426</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">缓存 99.7%</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;"><b>174 ms</b></td><td style="padding:6px 10px;border:1px solid #e5e7eb;">200 · 答对 PING · 零错</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">首轮</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">15,230</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">1.54k</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">9.9 s</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">200 · 答对 PONG</td></tr>
+    <tr style="background:#f0fdf4;"><td style="padding:6px 10px;border:1px solid #e5e7eb;">追问</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">15,255</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">缓存 99.8%</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;"><b>178 ms</b></td><td style="padding:6px 10px;border:1px solid #e5e7eb;">200 · 答对 PING · 零错</td></tr>
+  </table>
+  <div style="font-size:12px;color:#6b7280;margin-bottom:20px;">
+    容量行实测：<code>capacity | KV 8,192 tokens, k8v4 | pages 128/2,048</code> —— 主机池 4096 MiB 正好覆盖 131072 逻辑上下文所需（131072/64 − 128 = 1920 页 ≈ 3.0 GiB），留有余量。
+  </div>
+
+  <h2 style="font-size:16px;margin:0 0 8px;">4. 怎么用</h2>
+  <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;font-size:13px;line-height:1.8;margin-bottom:20px;">
+    主用（吞吐档）：双击 <code>start-dflash-128k-tuned.bat</code> → 引擎在 8094。<br>
+    需要腾显存（浏览器/壁纸引擎/游戏在跑）：双击 <code>start-mtp-slim.bat</code> → 多 ~1 GiB 显存，解码 180 tok/s（两档思考强度均已对齐为 <code>low</code>）。<br>
+    启动后照旧：<code>start-hermes-proxy.bat</code>（代理 8096）→ Hermes 指向 <code>http://127.0.0.1:8096</code>。<br>
+    KVMem 生效判据不变：stderr 出现 <code>kvmem_score: SELECT</code> 或 <code>ring retrieve</code> 行。
+  </div>
+
+  <h2 style="font-size:16px;margin:0 0 8px;">5. 推理能力实测（两个启动器会比出"更聪明"吗？）</h2>
+  <div style="font-size:12.5px;color:#6b7280;margin-bottom:8px;">
+    同一组 6 道可判分推理题（算术/传递逻辑/陷阱/速率/陷阱/指数方程），temperature 0 贪心，只改一个变量。
+  </div>
+  <table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:8px;">
+    <tr style="background:#f3f4f6;">
+      <th style="text-align:left;padding:7px 10px;border:1px solid #e5e7eb;">配置</th>
+      <th style="text-align:left;padding:7px 10px;border:1px solid #e5e7eb;">模型</th>
+      <th style="text-align:left;padding:7px 10px;border:1px solid #e5e7eb;">思考强度</th>
+      <th style="text-align:right;padding:7px 10px;border:1px solid #e5e7eb;">得分</th>
+      <th style="text-align:left;padding:7px 10px;border:1px solid #e5e7eb;">备注</th>
+    </tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">R1 <code>tuned</code></td><td style="padding:6px 10px;border:1px solid #e5e7eb;">dflash2_prop</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">low</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">6/6</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">有思考链</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">R3 = R1 关 <code>--spec</code></td><td style="padding:6px 10px;border:1px solid #e5e7eb;">dflash2_prop</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">low</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">6/6</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">与 R1 <b>逐字一致</b> → 推测解码无损</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">R4</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">dflash2_prop</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">none</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">6/6</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">思考改为正文内联</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">R5</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">mtp</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">low</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">6/6</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">有思考链</td></tr>
+    <tr style="background:#fef2f2;"><td style="padding:6px 10px;border:1px solid #e5e7eb;">R2 <code>slim</code>（改前）</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">mtp</td><td style="padding:6px 10px;border:1px solid #e5e7eb;">none</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;"><b>5/6</b></td><td style="padding:6px 10px;border:1px solid #e5e7eb;">代数题 5→4；无思考链</td></tr>
+  </table>
+  <div style="font-size:12.5px;color:#374151;line-height:1.8;margin-bottom:20px;">
+    <b>结论</b>：① 推测解码（dflash2/mtp 的"快"）<b>不影响推理</b>——同模型开/关草稿逐字一致。<br>
+    ② 两个<b>模型文件</b>（dflash2_prop / mtp）在本组题上<b>无可复现质量差异</b>（24 次判定仅 1 错，且同模型换 low 即正确）。<br>
+    ③ 真正的差别是配置项 <code>--default-reasoning-effort</code>：<code>tuned</code> 一直是 <code>low</code>，而 <code>slim</code> 出货时是 <code>none</code>。<code>none</code> 去掉了思考链，并至少在一次多步推导上出错。<br>
+    <b>已处理</b>：两个启动器现均设为 <code>high</code>（2026-10-11，用户要求）。注意该值只是服务端默认，客户端请求可覆盖。
+  </div>
+
+  <h2 style="font-size:16px;margin:0 0 8px;">6. 思考强度 high 实测（代价随难度走）</h2>
+  <div style="font-size:12.5px;color:#6b7280;margin-bottom:8px;">
+    同一 tuned 档（dflash2、draft 12），只把 <code>--default-reasoning-effort</code> 从 <code>low</code> 换成 <code>high</code>；temperature 0 贪心。合法档位：<code>none, minimal, low, medium, high, xhigh, max</code>。
+  </div>
+  <table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:8px;">
+    <tr style="background:#f3f4f6;">
+      <th style="text-align:left;padding:7px 10px;border:1px solid #e5e7eb;">题组</th>
+      <th style="text-align:right;padding:7px 10px;border:1px solid #e5e7eb;">low 思考链</th>
+      <th style="text-align:right;padding:7px 10px;border:1px solid #e5e7eb;">high 思考链</th>
+      <th style="text-align:right;padding:7px 10px;border:1px solid #e5e7eb;">low 耗时</th>
+      <th style="text-align:right;padding:7px 10px;border:1px solid #e5e7eb;">high 耗时</th>
+      <th style="text-align:right;padding:7px 10px;border:1px solid #e5e7eb;">正确率</th>
+    </tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">简单 6 题（合计）</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">1316 ch</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">1267 ch</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">0.4–1.0 s</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">0.4–1.0 s</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">6/6 = 6/6</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">难题① 容斥计数</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">502 ch</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;"><b>1171 ch</b></td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">2.0 s</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">4.7 s</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">✔ = ✔</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">难题② 手算 Fibonacci(50)</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">664 ch</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">345 ch</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">2.9 s</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">1.6 s</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">✔ = ✔</td></tr>
+  </table>
+  <div style="font-size:12.5px;color:#374151;line-height:1.8;margin-bottom:20px;">
+    <b>结论</b>：<code>high</code> 只加宽思考预算，<b>不保证更长、也不保证更准</b>——简单题无感；真正需要长推导的题（难题①）思考链拉到 low 的 2.3×、单答耗时 2.4×；难题②反而更短。<b>质量：8 题两档全对，无可测差异。</b>在意单答延迟就用 <code>low</code>；把 <code>high</code> 留给难题场景。
+  </div>
+
+  <h2 style="font-size:16px;margin:0 0 8px;">7. Vision 驻留位置实测（默认挂在 GPU，不是 CPU）</h2>
+  <div style="font-size:12.5px;color:#6b7280;margin-bottom:8px;">
+    引擎 <code>--vision</code> 的默认角色是 resident（<code>--help</code> 原文：accept images and video and <b>load the Vision GPU allocations</b>）。只有显式给 <code>--vision-residency</code> 才会离开设备内存。mtp 档此前只写了 <code>--vision</code>，所以视觉塔一直常驻显存。
+    <br>同参对照（mtp 模型，各跑 2 轮；Δ = 加载后显存 − 桌面基线）：
+  </div>
+  <table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:8px;">
+    <tr style="background:#f3f4f6;">
+      <th style="text-align:left;padding:7px 10px;border:1px solid #e5e7eb;">配置</th>
+      <th style="text-align:right;padding:7px 10px;border:1px solid #e5e7eb;">ΔVRAM（2 轮）</th>
+      <th style="text-align:right;padding:7px 10px;border:1px solid #e5e7eb;">runtime</th>
+      <th style="text-align:right;padding:7px 10px;border:1px solid #e5e7eb;">free</th>
+    </tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">只给 <code>--vision</code>（默认 resident）</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">13856 / 13940 MiB</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">2.39 GiB</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">~1.02 GiB</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;"><code>--vision-residency overlay</code>（<b>已采用</b>）</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;"><b>13259 / 13318 MiB</b></td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">2.07 GiB</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;"><b>~1.50 GiB</b></td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;"><code>--vision-residency cpu</code>（tuned 档）</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">13256 / 13270 MiB</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">2.07 GiB</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">~1.58 GiB</td></tr>
+    <tr><td style="padding:6px 10px;border:1px solid #e5e7eb;">完全去掉 <code>--vision</code></td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">13278 / 13239 MiB</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">2.06 GiB</td><td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">~1.55 GiB</td></tr>
+  </table>
+  <div style="font-size:12.5px;color:#374151;line-height:1.8;margin-bottom:20px;">
+    <b>结论</b>：默认 resident <b>多占约 600 MiB</b>；overlay / cpu / 关闭三档在本卡上几乎等价（差异在噪声内）。<code>start-mtp-slim.bat</code> 已改为 <code>overlay</code>——拿回这 600 MiB，而 <b>不牺牲图片分辨率</b>：<code>cpu</code> 会把 <code>--vision-max-merged</code> 隐式压到 <b>256</b>（除非显式给值），tuned 档正是这种情况；<code>overlay</code> 保留 16384 默认。
+    <br>端到端复核：经桌面快捷方式启动，6 秒就绪，Δ 13262 MiB、free <b>1491 MiB</b>。
+    <br><b>代价</b>：视觉处理走 CPU 侧、稍慢；发大图时会临时借用设备显存。若你从不发图片，可直接删掉 <code>--vision</code>，省的显存一样多且不加载视觉塔。<br><br>
+    <b>视觉功能端到端验证（2026-10-11）</b>：用一张 512×512 判分图（白底 + 红圆 + 蓝方块）分别向 tuned 与 slim 发送 base64 图片请求，两档<b>均 HTTP 200 且识别正确</b>（回答 "Two shapes: a red circle and a blue square."）。overlay 未破坏视觉功能，图片被正常预处理（<code>media 1, prepared ~5 ms</code>）；cpu 的 256 压缩在常规图片上不影响识别，仅细节损失。
+  </div>
+
+  <h2 style="font-size:16px;margin:24px 0 8px;">8. Hermes 长会话崩溃（worker crash）的诊断与修复</h2>
+  <div style="font-size:12.5px;color:#374151;line-height:1.8;margin-bottom:14px;">
+    现象（2026-10-11 用户截图）：Hermes 用了一段时间后，引擎窗口打印
+    <code>worker crash: Paged KV reservation invariant was violated</code> 与
+    <code>req#15 failed ... HTTP 500</code>；Hermes 侧表现为"AI 服务返回了无法读取的回复"。
+  </div>
+  <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 14px;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:#7f1d1d;line-height:1.6;margin-bottom:14px;white-space:pre-wrap;">adopt host-backed: frontier=33402 need=522 usable=280 host_backed=390
+demote-other short: freed=0 want=390 slots=1 invalid=0 n=0 stale_epochs=0 dup=0 flushfree
+ERROR engine | worker crash: Paged KV reservation invariant was violated
+ERROR req#15 failed during generation | HTTP 500 | internal error</div>
+  <div style="font-size:12.5px;color:#374151;line-height:1.8;margin-bottom:20px;">
+    <b>根因</b>：两个启动器此前被设成 <code>NINFER_KV_REUSE_HOSTBACKED=1</code>。该模式在追问时会把 ring 里保留的 host-KV 前缀 <b>整体 adopt</b> 进活动 KV；当会话长到超过设备池（本次 prompt <b>51,944</b> token &gt; 池 <b>17,920</b>）时装不下 → demote 也腾不出（<code>freed=0</code>）→ 触发引擎内部 "Paged KV reservation invariant"，worker 直接崩溃。<br>
+    <b>修复</b>：两个启动器改回 <code>NINFER_KV_REUSE_HOSTBACKED=0</code>（这本来就是 <code>fix-summary.html</code> 与 <code>README-128k.txt</code> 在 2026-10-10 记录的同一处方）。KVMem ring 与内容打分保留，代价是每轮重新 prefill（追问变慢，但不再 500、不再崩溃）。<br>
+    <b>别把两件事混为一谈</b>：<br>
+    &nbsp;&nbsp;① <b>崩溃 / 500</b> = REUSE=1 的 adopt 失败 → 处方：改回 0；<br>
+    &nbsp;&nbsp;② <b>静默答错</b> = 超池时"中段内容消失、HTTP 200 但答案是错的" → 治它的是 KVMem 内容打分（判据：日志出现 <code>kvmem_score: SELECT</code> 行）。<b>超池本身不等于崩溃</b>，但"超池 + REUSE=1"会崩。<br>
+    <b>另一个提醒</b>：会话 52k token 时，即便不崩，每轮重 prefill 也会明显变慢；若长期如此使用，建议在 Hermes 侧收敛历史长度与工具数量（本次请求是 42 messages + 27 tools + 5 media）。
+  </div>
+
+  <h2 style="font-size:16px;margin:24px 0 8px;">9. "思考了但不输出" —— 无限思考把答案饿死（已修复）</h2>
+  <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;font-size:13px;line-height:1.8;margin-bottom:14px;">
+    <b>症状</b>：客户端里看到模型在思考（reasoning 流出来了），但<b>最终答案一个字都没有</b>。<br>
+    <b>根因</b>：思考 token 与答案<b>共用同一个 <code>max_tokens</code> 预算</b>，引擎默认又没有给思考单独设上限。在一道难题上（<code>--default-reasoning-effort high</code>），模型把整个 32768 输出预算全烧在思考里，<b>正文 0 字符</b>、<code>finish_reason=length</code>。
+  </div>
+
+  <table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:12px;">
+    <tr style="background:#f3f4f6;">
+      <th style="border:1px solid #e5e7eb;padding:6px 8px;text-align:left;">档位</th>
+      <th style="border:1px solid #e5e7eb;padding:6px 8px;">耗时</th>
+      <th style="border:1px solid #e5e7eb;padding:6px 8px;">思考 token</th>
+      <th style="border:1px solid #e5e7eb;padding:6px 8px;">正文</th>
+      <th style="border:1px solid #e5e7eb;padding:6px 8px;">finish</th>
+    </tr>
+    <tr><td style="border:1px solid #e5e7eb;padding:6px 8px;">none</td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">58 s</td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">0</td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">15873 字 <b>✅</b></td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">stop</td></tr>
+    <tr><td style="border:1px solid #e5e7eb;padding:6px 8px;">minimal</td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">236 s</td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">32768（烧光）</td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;color:#b91c1c;"><b>0</b></td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">length</td></tr>
+    <tr><td style="border:1px solid #e5e7eb;padding:6px 8px;">low</td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">238 s</td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">32768（烧光）</td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;color:#b91c1c;"><b>0</b></td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">length</td></tr>
+    <tr><td style="border:1px solid #e5e7eb;padding:6px 8px;">medium</td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">116 s</td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">17773</td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;color:#b91c1c;"><b>0</b></td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">stop</td></tr>
+    <tr><td style="border:1px solid #e5e7eb;padding:6px 8px;">high</td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">273 s</td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">32768（烧光）</td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;color:#b91c1c;"><b>0</b></td><td style="border:1px solid #e5e7eb;padding:6px 8px;text-align:center;">length</td></tr>
+  </table>
+
+  <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;font-size:13px;line-height:1.8;margin-bottom:12px;">
+    <b>结论：只要开思考，这个模型在这种难题上就会"想不完、不落笔"</b>——降档位解决不了（low/minimal 同样烧光）。<br>
+    <b>解药</b>是引擎自带的两个开关（两个启动器均已加入）：<br>
+    &nbsp;&nbsp;<code>--default-thinking-budget 2048</code> —— 给思考设独立上限；<br>
+    &nbsp;&nbsp;<code>--thinking-budget-message "..."</code> —— 到预算时注入提示，引擎自动补上思考闭合标记，逼模型转入正文。<br>
+    <b>修复后实测</b>（同题同档 high）：<span style="color:#b91c1c;">修复前 273 s / 正文 0 字</span> → <b style="color:#15803d;">修复后 20 s / 正文 769 字，答案正常给出</b>。
+  </div>
+
+  <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 14px;font-size:12.5px;line-height:1.7;color:#78350f;margin-bottom:14px;">
+    <b>一个必须记住的约束</b>：<b>思考预算必须明显小于客户端给你的 <code>max_tokens</code></b>，否则思考照样吃光配额。实测：<br>
+    &nbsp;&nbsp;客户端 <code>max_tokens 32768</code>（或不传，用引擎默认）→ 思考预算 4096/2048 都正常；<br>
+    &nbsp;&nbsp;客户端 <code>max_tokens 2048</code> → <b>思考预算必须降到 1024</b>（2048 会失败、正文为空）。<br>
+    所以：<b>你的客户端如果固定了一个很小的 <code>max_tokens</code>，请把两个启动器里的 <code>--default-thinking-budget</code> 改成 1024。</b>简单题不受影响（实测思考只用了 40 token，0.5 s 出答案）。
+  </div>
+
+  <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 14px;font-size:12.5px;line-height:1.7;color:#78350f;">
+    <b>诚实边界</b>：以上均为<b>本卡（RTX 5070 Ti 16 GB）</b>单机实测，题面为"数数字"语料——可预测输出下 dflash2 接受率高，换散文/开放问答解码会下降（约 160 tok/s 量级），draft 深度收益也随之变小。draft 12 在不可预测文本上可能不如 4，换任务时可回头对比一次。所有被拒配置（CUDA graph / 大池 / mtp+draft12）的拒绝原因都是引擎自己的启动期数字，非推断。
+  </div>
+
+</div>
+</div>
+</body>
+</html>

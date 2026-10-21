@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>复用侧实测报告 · 前缀缓存/共享前缀/输出窗口 · 2026-10-12</title>
+<style>
+  :root{--bg:#f7f7f5;--card:#fff;--line:#e3e2dd;--tx:#26251f;--tx2:#5f5e5a;--tx3:#8a887f;
+        --ok:#0f6e56;--okbg:#e1f5ee;--no:#a32d2d;--nobg:#fcebeb;--warn:#854f0b;--warnbg:#faeeda;
+        --blue:#185fa5;--bluebg:#e6f1fb;}
+  *{box-sizing:border-box}
+  body{margin:0;padding:32px 24px;background:var(--bg);color:var(--tx);
+       font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:900px;margin:0 auto}
+  h1{font-size:20px;font-weight:600;margin:0 0 6px}
+  .sub{color:var(--tx2);font-size:13px;margin-bottom:24px}
+  h2{font-size:15px;font-weight:600;margin:28px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  h3{font-size:13px;font-weight:600;margin:18px 0 8px;color:var(--tx2)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:12px 0}
+  .verdict{display:flex;gap:12px;align-items:flex-start}
+  .tag{flex:0 0 auto;font-size:12px;font-weight:600;padding:3px 9px;border-radius:6px;white-space:nowrap}
+  .t-ok{background:var(--okbg);color:var(--ok)}
+  .t-no{background:var(--nobg);color:var(--no)}
+  .t-warn{background:var(--warnbg);color:var(--warn)}
+  .t-blue{background:var(--bluebg);color:var(--blue)}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--tx2);font-weight:600;font-size:12px;background:#fafaf8}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  code,pre{font-family:Consolas,"Cascadia Mono",monospace;font-size:12px}
+  code{background:#f2f1ec;padding:1px 5px;border-radius:4px}
+  pre{background:#f2f1ec;border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto;line-height:1.5}
+  .muted{color:var(--tx3);font-size:12px}
+  ul{margin:8px 0;padding-left:20px}
+  li{margin:4px 0}
+  .good{color:var(--ok);font-weight:600}
+  .bad{color:var(--no);font-weight:600}
+  .neu{color:var(--tx3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>复用侧实测报告 — 前缀缓存 / 共享前缀 / 输出窗口</h1>
+  <div class="sub">2026-10-12 · 引擎 <code>ninfer-serve-120a.exe</code> · 模型 <code>gsq_rco_iq3_s_dflash2_prop.ninfer</code> · RTX 5070 Ti 16 GB · tuned 档参数 · 全部为实测</div>
+
+  <h2>结论摘要</h2>
+
+  <div class="card verdict">
+    <span class="tag t-no">启动器：一个字不改</span>
+    <div>
+      之前列出的 <b>5 个待测杠杆，4 个零收益、1 个有害</b>。
+      现启动器里的 <code>--max-shared-prefixes 0</code> <b>不是疏漏，而是防御性正确配置</b>——
+      改成 7 会在长会话下把引擎打崩（见下）。<b>本轮不产生任何启动器改动。</b>
+    </div>
+  </div>
+
+  <div class="card verdict">
+    <span class="tag t-warn">唯一的有效项，但危险</span>
+    <div>
+      <code>--max-shared-prefixes 7</code> 在<b>短 prompt</b>（≤池）时能把跨会话 TTFT
+      从 <b>1.0 s 压到 0.13~0.22 s</b>（cache 98.2%，引擎标记 <code>shared prefix</code>）；
+      但在<b>长 prompt</b>（超池，正是你的 agent 会话）时 → <span class="bad">worker crash / HTTP 500</span>。
+      <b>收益只存在于你不会用的场景，风险却落在你在用的场景。</b>
+    </div>
+  </div>
+
+  <div class="card verdict">
+    <span class="tag t-blue">根因：KV 池 = 8192 token</span>
+    <div>
+      tuned 档的 <code>--kv-capacity 8192</code> 是<b>本卡硬上限</b>（16384 需 1.13 GB runtime，
+      只剩 0.98 GB，叠加 <code>--kv-lease-growth</code> 也一样失败）。
+      所以 <b>prompt ≤ 8192 token 才有前缀复用</b>；一超池，cache 直接归零、
+      TTFT 与 prompt 长度线性增长（25k token → 18.7 s）。
+      <b>这才是 tuned 档跑长会话慢的根因，不是任何一个可调参数。</b>
+    </div>
+  </div>
+
+  <h2>测法与脚手架</h2>
+  <p class="muted">全部遵循「单变量对照 + 引擎日志自证」。日志里 <code>req#N done</code> 行自带
+  <code>cache N (P%, 原因) | TTFT T</code>，是复用问题的唯一判据。</p>
+  <table>
+    <thead><tr><th>脚本</th><th>场景</th><th>每轮问什么</th></tr></thead>
+    <tbody>
+      <tr><td><code>runreuse.sh</code></td><td>同一会话 4 轮「只增不减」追问</td><td>prompt 每轮追加一问，观察第 2~4 轮能否复用</td></tr>
+      <tr><td><code>runshare.sh</code></td><td>3 个不同会话共享同一段长 system 前缀</td><td>首条 user 消息各不相同 → 派生出不同会话</td></tr>
+      <tr><td><code>run.sh</code></td><td>1000 token 输出（数数字）</td><td>看显存与吞吐是否被改动</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">实验前先证伪了一个设计错误：最初的测试 prompt 是 10k token，
+  比 8192 池还大 → 基线 4 轮 cache 全是 0。把 prompt 压进池内后才拿到有意义的对照。</p>
+
+  <h2>① 同会话追问（池内，prompt 4,953 → 5,043 token）</h2>
+  <table>
+    <thead><tr><th>配置</th><th class="num">T1（冷）</th><th class="num">T2</th><th class="num">T3</th><th class="num">T4</th></tr></thead>
+    <tbody>
+      <tr><td><b>R0 基线</b>（现状）</td>
+          <td class="num">0% · 3.0 s</td><td class="num good">99.4% · 105 ms</td>
+          <td class="num good">99.4% · 106 ms</td><td class="num good">99.4% · 107 ms</td></tr>
+      <tr><td>R1 <code>+derive-session-keys +rolling</code></td>
+          <td class="num">0% · 3.1 s</td><td class="num">99.4% · 118 ms</td>
+          <td class="num">99.4% · 109 ms</td><td class="num">99.4% · 108 ms</td></tr>
+    </tbody>
+  </table>
+  <div class="card verdict">
+    <span class="tag t-no">零收益</span>
+    <div>两行<b>逐字相同</b>。基线本来就以 <code>private endpoint</code> 路径吃满 99.4%，
+    <code>--derive-session-keys</code> 与 <code>--context-cache-policy rolling</code> 无事可做。
+    <span class="muted">注：引擎的 <code>turn closure</code> / <code>private endpoint</code> 这类自动机制
+    不需要任何参数，这是历史日志里 99.7% 命中的来源。</span></div>
+  </div>
+
+  <h2>② 跨会话共享前缀（3 会话，共享 system 前缀 1,416 token）</h2>
+  <table>
+    <thead><tr><th>配置</th><th class="num">S1</th><th class="num">S2</th><th class="num">S3</th><th class="num">shared 计数</th></tr></thead>
+    <tbody>
+      <tr><td><b>R0</b> <code>--max-shared-prefixes 0</code></td>
+          <td class="num">0% · 1.0 s</td><td class="num bad">0% · 1.0 s</td><td class="num bad">0% · 924 ms</td><td class="num">0</td></tr>
+      <tr><td><b>R5</b> 仅改 <code>--max-shared-prefixes 7</code></td>
+          <td class="num">0% · 1.1 s</td><td class="num good">98.2% · 205 ms</td><td class="num good">98.2% · 139 ms</td><td class="num">7</td></tr>
+      <tr><td><b>R2</b> = R5 + derive + rolling</td>
+          <td class="num">0% · 1.1 s</td><td class="num good">98.2% · 218 ms</td><td class="num good">98.2% · 127 ms</td><td class="num">7</td></tr>
+      <tr><td><b>R3</b> = R2 + <code>--auto-prefix-grid</code></td>
+          <td class="num">0% · 1.1 s</td><td class="num good">98.2% · 215 ms</td><td class="num good">98.2% · 135 ms</td><td class="num">7</td></tr>
+    </tbody>
+  </table>
+  <div class="card verdict">
+    <span class="tag t-blue">单变量定位</span>
+    <div><b>R5 只加了一项参数就复现了全部收益</b>，R2/R3 与它逐字相同 →
+    <code>--auto-prefix-grid</code>、<code>--derive-session-keys</code>、<code>rolling</code> 全部无贡献，
+    起作用的就是 <code>--max-shared-prefixes</code> 这一项。跨会话 TTFT <b>1.0 s → 0.13~0.22 s（快 5~7 倍）</b>。</div>
+  </div>
+
+  <h2>③ 超池长 prompt — 同一项参数反而把引擎打崩</h2>
+  <p class="muted">同一个 25,324 token 的 prompt（120,000 字符，<b>远超 8192 池</b>），
+  发两个不同会话。唯一变量是 <code>--max-shared-prefixes</code>。</p>
+  <table>
+    <thead><tr><th>配置</th><th class="num">S1</th><th class="num">S2</th><th>结果</th></tr></thead>
+    <tbody>
+      <tr><td><b>R0</b> <code>--max-shared-prefixes 0</code>（现状）</td>
+          <td class="num">0% · 18.7 s</td><td class="num">0% · 18.8 s</td><td class="good">✓ 两次都正常返回（慢，但活着）</td></tr>
+      <tr><td><b>R5</b> <code>--max-shared-prefixes 7</code></td>
+          <td class="num bad">HTTP 500</td><td class="num bad">HTTP 503</td><td class="bad">✗ worker crash，引擎死亡</td></tr>
+    </tbody>
+  </table>
+  <pre>// R5 崩前的最后几行（引擎 stderr 原文）
+[ninfer] publish host-backed: frontier=25299 scanned=396 host_backed=276 host_bytes=454459392
+ERROR engine | worker crash: active KV snapshot full page is not stable
+ERROR req#1 failed during generation | openai-chat | HTTP 500 | internal error
+WARN  req#2 failed during prepare    | openai-chat non-stream | HTTP 503 | service unavailable
+
+// 客户端实际收到的响应体
+{"error":{"message":"active KV snapshot full page is not stable","type":"internal_error"}}
+{"error":{"code":"service_unavailable","message":"inference engine is unavailable","type":"server_error"}}</pre>
+  <div class="card verdict">
+    <span class="tag t-warn">机制</span>
+    <div>开启共享目录后，引擎要把「稳定前缀」发布到共享目录
+    （<code>frontier=25299</code>、<code>host_bytes=454 MB</code>）；但池只有 8192，前缀根本装不下，
+    快照页不稳定 → worker 崩溃。<b>这与已知的 <code>NINFER_KV_REUSE_HOSTBACKED=1</code> 是同一类坑</b>：
+    都是「<b>超池 + 前缀共享/adopt 机制</b>」的组合触发。
+    <br><br>⇒ <b>规律：超池本身不会崩；超池 + 任何前缀共享机制才崩。</b>
+    所以前缀共享类参数只在 prompt ≤ 池大小（tuned 8192 / slim 17920）时安全且有效。</div>
+  </div>
+
+  <h2>④ 输出窗口：<code>--kv-lease-growth</code></h2>
+  <table>
+    <thead><tr><th>配置</th><th class="num">加载后显存</th><th class="num">decode</th><th>结论</th></tr></thead>
+    <tbody>
+      <tr><td>R0 基线</td><td class="num">15,697 MiB</td><td class="num">~286 tok/s</td><td class="neu">参照</td></tr>
+      <tr><td>R4 <code>+--kv-lease-growth</code></td><td class="num">15,703 MiB</td><td class="num">284.1 tok/s</td><td class="bad">✗ 不省显存、不改速度</td></tr>
+      <tr><td>R6 <code>+--kv-lease-growth --kv-capacity 16384</code></td><td class="num">—</td><td class="num">—</td><td class="bad">✗ 启动即 FATAL</td></tr>
+    </tbody>
+  </table>
+  <pre>// R6 启动失败原文
+ERROR engine init | FAILED while constructing the service:
+  requested Engine runtime reservation requires 1133803008 bytes,
+  but only 976670720 bytes are available for runtime capacity</pre>
+  <p class="muted">即便用 lease-growth 免去整个 <code>max_tokens</code> 输出窗口的预留，
+  <code>--kv-capacity 16384</code> 仍差 157 MB 装不下 → <b>池 8192 是硬上限，无法通过参数翻倍</b>。</p>
+
+  <h2>⑤ 机制总结：复用能力完全由池大小决定</h2>
+  <table>
+    <thead><tr><th>prompt 大小</th><th>in tuned（池 8192）</th><th>实测证据</th></tr></thead>
+    <tbody>
+      <tr><td>≤ 8192 token</td><td class="good">追问 cache 99.4%、TTFT ~105 ms；跨会话（需 shared 目录）0.13~0.22 s</td>
+          <td><code>cache 4,955 (99.4%, private endpoint)</code></td></tr>
+      <tr><td>&gt; 8192 token（你的真实会话）</td><td class="bad">cache 0%、每次全量 prefill、TTFT 随长度线性增长</td>
+          <td><code>prompt 25,324 | cache 0 (0.0%) | TTFT 18.7s</code></td></tr>
+    </tbody>
+  </table>
+  <div class="card">
+    <h3 style="margin-top:0">两个档的池对比</h3>
+    <table style="margin:0">
+      <thead><tr><th>档位</th><th class="num">--kv-capacity</th><th class="num">KV window</th><th class="num">decode</th></tr></thead>
+      <tbody>
+        <tr><td>tuned（dflash2）</td><td class="num">8,192</td><td class="num">3,072</td><td class="num">~286 tok/s</td></tr>
+        <tr><td>slim（mtp + graph）</td><td class="num">17,920</td><td class="num">16,384</td><td class="num">~180 tok/s</td></tr>
+      </tbody>
+    </table>
+    <p class="muted" style="margin-bottom:0">slim 的池是 tuned 的 2.2 倍 → <b>长会话下 slim 的复用窗口明显更宽</b>，
+    代价是 decode 慢 37%。</p>
+  </div>
+
+  <h2>建议（按代价从低到高）</h2>
+  <ul>
+    <li><b>保持两个启动器不变。</b>本轮 5 个候选项没有一个通过对本场景的性价比检验，
+      <code>--max-shared-prefixes 0</code> 必须保留。</li>
+    <li><b>别再试 <code>--kv-capacity</code> ≥16384、<code>--prefill-chunk 512</code></b>：
+      两者都因为运行期预留装不下而启动失败，已两次实测。</li>
+    <li><b>想改善长会话体验，唯一有实际作用的杠杆是减少超池</b>——
+      即收敛单次会话的历史长度与工具数量（把 52k token 压回 8k 以内，
+      追问就能从 18.7 s 掉到 ~105 ms；这个落差是 170 倍，远大于任何参数微调）。</li>
+    <li><b>长会话也可以改用 slim 档</b>（池 17,920 是 tuned 的 2.2 倍），
+      用 37% 的 decode 速度换更宽的前缀复用窗口。</li>
+  </ul>
+
+  <h2>原始产物</h2>
+  <p class="muted">脚手架：<code>.workbuddy/bench/runreuse.sh</code>、<code>runshare.sh</code>；
+  spec：<code>spec-R0-tuned-base.sh</code> … <code>spec-R6-lease-pool16k.sh</code>；
+  日志证据：<code>.workbuddy/bench/spec-R*.reuse.err</code>、<code>spec-R*.share.err</code>。</p>
+
+</div>
+</body>
+</html>

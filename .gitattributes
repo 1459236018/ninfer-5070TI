@@ -1,0 +1,23 @@
+# 默认：不做行尾转换，按文件里写的原样存（这是「不要自作聪明」的开关）
+* -text
+
+# 下面这些明确标成文本，让 Git 统一成 LF
+*.md    text eol=lf
+*.py    text eol=lf
+*.json  text eol=lf
+*.txt   text eol=lf
+*.yml   text eol=lf
+*.html  text eol=lf
+.gitignore    text eol=lf
+.gitattributes text eol=lf
+
+# ── 特殊编码 / 二进制，Git 一律按字节原样处理 ─────────────────
+# start-mtp-slim-silent.vbs 是 UTF-16 LE + BOM，且是 Windows 脚本通道，
+# 行尾与 BOM 都必须原样保留 —— 标成 binary 就完全不碰它。
+*.vbs binary
+*.bat binary
+*.cmd binary
+*.ps1 binary
+*.ico binary
+*.png binary
+

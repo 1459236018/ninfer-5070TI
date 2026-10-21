@@ -1,0 +1,94 @@
+NInfer Engine Pack (sm_120a) — NOTICE
+=====================================
+
+This distribution (engine binary + launchers + tools + docs) is composed of
+pieces with different upstream origins. All are licensed under Apache-2.0.
+This NOTICE must be retained in any redistribution of the engine binary,
+as required by Apache-2.0 section 4(d).
+
+--------------------------------------------------------------------------------
+1. Upstream code that the engine binary is built from
+--------------------------------------------------------------------------------
+
+1.1  NInfer (original engine)
+     https://github.com/Neroued/ninfer
+     License: Apache-2.0
+     Role: base engine -- model loading, GPU backend, samplers, HTTP server.
+
+1.2  NInfer RTX 3090 port (baseline lineage)
+     https://github.com/ashalliants/ninfer-3090      (baseline, VERSION 0.11.0-rtx3090)
+     https://github.com/iamwavecut/ninfer-3090      (archived mirror)
+     License: Apache-2.0
+     Role: the 0.11.0 code line this binary is descended from.
+
+1.3  NInfer KVMem ring
+     https://github.com/tancau/ninfer-kvmem-ring
+     License: Apache-2.0
+     Role: KV ring / host-backed overflow. Merged into the engine; the ring is
+           opened by the NINFER_KV_WINDOW variable (see AGENTS.md section 2).
+
+1.4  kvmem-qw3 (policy layer for Qwen3 / Qwen3.5 model lines)
+     https://github.com/kvmem/kvmem-qw3
+     License: Apache-2.0
+     Role: KV content-scoring / retrieval policy. 8 files under src/ops/kvmem/qw3/.
+
+1.5  ggml-quants (CUDA dequantization kernels)
+     vendored as third_party/ggml-quants (e.g. ggml-cuda/mmq.cuh)
+     License: Apache-2.0
+     Role: quantization kernels used by the CUDA matmul paths.
+
+--------------------------------------------------------------------------------
+2. Additional merged work (2026-10-19 architecture merge)
+--------------------------------------------------------------------------------
+
+The shipped binary additionally contains a merge of:
+  - streaming KV: page fault-back-in and budget-based demotion, wired into the
+    KVMem ring;
+  - the Bonsai 27B ternary model line (qwen3_5 execution path).
+Source build root recorded in the binary: a local `infer-build/fusion-arch-20261019`
+tree. This part is not a separate public repository.
+
+--------------------------------------------------------------------------------
+3. What this repository adds
+--------------------------------------------------------------------------------
+
+The following are original work in this repository and are NOT from upstream:
+
+  - AGENTS.md                     measured deployment / tuning manual
+  - tools/batcfg.py               launcher parsing (ports, model, args)
+  - tools/autoconfig.py           per-GPU capacity calibration
+  - tools/probe-*.py              capacity / dtype / VRAM / prefix-reuse probes
+  - tools/analyze-requests.py     request-log analysis
+  - tools/engine-session-log.py   engine start/stop session logs (keep last 3)
+  - tools/ninfer-tray.py          Windows tray host
+  - tools/warmup_proxy.py         local request-cleaning proxy (port 8094)
+  - tools/eval/                   25-case quality evaluation set
+  - tools/pack.py                 distribution packer (excludes models)
+  - docs/                         model notes and community docs
+  - start-*.bat / start-*.vbs     launchers
+
+These are licensed Apache-2.0 (see LICENSE).
+
+--------------------------------------------------------------------------------
+4. Engine binary identity (for the Release asset)
+--------------------------------------------------------------------------------
+
+  file    engine/ninfer-serve-120a.exe
+  bytes   710338048
+  sha256  B07D9FCFD2BAD41F10861CF33865DE35FE910A224237A2674966F7F98B31891E
+  built   2026-10-20 07:36
+
+The binary is UNSIGNED (no code-signing certificate). Windows SmartScreen /
+Mark-of-the-Web will warn on first run; see README "首次运行".
+
+The binary embeds CUDA kernels as PTX (segment .nv_fatb) together with
+precompiled cubins. PTX is present and recompilable with ptxas 13.x; see
+AGENTS.md section 0 ("关于不可改代码") for why recompiling is not recommended.
+
+--------------------------------------------------------------------------------
+5. Not included
+--------------------------------------------------------------------------------
+
+No model weights are distributed here. `.ninfer` files are derived from
+third-party model releases and carry their own licenses, which are the
+responsibility of whoever supplies the model file.

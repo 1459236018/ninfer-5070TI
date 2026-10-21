@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>加速实测报告 · A 组（草稿/prefill） + D 组（系统侧） · 2026-10-12</title>
+<style>
+  :root{--bg:#f7f7f5;--card:#fff;--line:#e3e2dd;--tx:#26251f;--tx2:#5f5e5a;--tx3:#8a887f;
+        --ok:#0f6e56;--okbg:#e1f5ee;--no:#a32d2d;--nobg:#fcebeb;--warn:#854f0b;--warnbg:#faeeda;
+        --blue:#185fa5;--bluebg:#e6f1fb;}
+  *{box-sizing:border-box}
+  body{margin:0;padding:32px 24px;background:var(--bg);color:var(--tx);
+       font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:900px;margin:0 auto}
+  h1{font-size:20px;font-weight:600;margin:0 0 6px}
+  .sub{color:var(--tx2);font-size:13px;margin-bottom:24px}
+  h2{font-size:15px;font-weight:600;margin:28px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  h3{font-size:13px;font-weight:600;margin:18px 0 8px;color:var(--tx2)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:12px 0}
+  .verdict{display:flex;gap:12px;align-items:flex-start}
+  .tag{flex:0 0 auto;font-size:12px;font-weight:600;padding:3px 9px;border-radius:6px;white-space:nowrap}
+  .t-ok{background:var(--okbg);color:var(--ok)}
+  .t-no{background:var(--nobg);color:var(--no)}
+  .t-warn{background:var(--warnbg);color:var(--warn)}
+  .t-blue{background:var(--bluebg);color:var(--blue)}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--tx2);font-weight:600;font-size:12px;background:#fafaf8}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  code,pre{font-family:Consolas,"Cascadia Mono",monospace;font-size:12px}
+  code{background:#f2f1ec;padding:1px 5px;border-radius:4px}
+  pre{background:#f2f1ec;border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto;line-height:1.5}
+  .muted{color:var(--tx3);font-size:12px}
+  ul{margin:8px 0;padding-left:20px}
+  li{margin:4px 0}
+  .kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed var(--line)}
+  .kv:last-child{border-bottom:0}
+  .kv span:first-child{color:var(--tx2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>加速实测报告 — A 组（引擎草稿/prefill）+ D 组（系统侧）</h1>
+  <div class="sub">2026-10-12 · 引擎 <code>ninfer-serve-120a.exe</code> · 模型 <code>gsq_rco_iq3_s_dflash2_prop.ninfer</code> · RTX 5070 Ti 16 GB · 全部数据为同一次会话内实测</div>
+
+  <h2>结论摘要</h2>
+
+  <div class="card verdict">
+    <span class="tag t-no">A 组：零收益</span>
+    <div>
+      <b>ngram 草稿调参不产生任何差异，不要改启动器。</b>
+      两组语料 × 两配置共 4 次运行，decode 与草稿接受数在噪声内完全一致
+      （<code>--ngram-min-match 8</code> + <code>--lookup-ngram 32</code> 对默认配置无改进）。
+      原因是 ngram 草稿<b>默认就已经在满负荷工作</b>。
+    </div>
+  </div>
+
+  <div class="card verdict">
+    <span class="tag t-warn">prefill 512：装不下</span>
+    <div>
+      tuned 档把 <code>--prefill-chunk</code> 提到 512 会<b>启动即失败</b>：
+      运行期需预留 1,199,772,160 B，而只剩 983,359,488 B。<b>维持 256。</b>
+    </div>
+  </div>
+
+  <div class="card verdict">
+    <span class="tag t-ok">D 组：部分有效</span>
+    <div>
+      电源计划已由「平衡」切到<b>「高性能」</b>；关掉 WidgetBoard / Intel Graphics Software 后
+      桌面独显占用 <b>1320 → 973 MiB</b>。但真正的大头 <b>dwm（约 620 MiB 实际）挪不动</b>。
+    </div>
+  </div>
+
+  <div class="card verdict">
+    <span class="tag t-blue">更正</span>
+    <div>
+      早前把 <b>MuMu 与 GameViewer 当成独显主要竞争者，是错的</b>。实测它们在独显上的占用
+      全部低于 20 MB 阈值，一个都没进榜。
+    </div>
+  </div>
+
+  <h2>A 组 · 原始数据（4 次运行）</h2>
+  <p class="muted">基线 = <code>spec-N0-tuned-base.sh</code>（与当前 tuned 启动器逐字一致，REUSE_HOSTBACKED 修正为 0）；
+  调参 = <code>spec-N1-tuned-ngram.sh</code>（仅在基线上加 ngram 两个参数）。</p>
+
+  <table>
+    <thead>
+      <tr><th>语料</th><th>配置</th><th class="num">decode</th><th class="num">prefill</th><th class="num">TTFT</th><th>草稿统计（引擎原话）</th></tr>
+    </thead>
+    <tbody>
+      <tr><td rowspan="2">生成型<br><span class="muted">数 1..300 续写，1000 out</span></td>
+          <td>基线</td><td class="num">275.0 tok/s</td><td class="num">1.26k tok/s</td><td class="num">925 ms</td>
+          <td><code>dflash2 accepted 912/1,043 (87.4%)</code></td></tr>
+      <tr><td>+ngram 调参</td><td class="num">273.8 tok/s</td><td class="num">1.33k tok/s</td><td class="num">877 ms</td>
+          <td><code>dflash2 accepted 912/1,043 (87.4%)</code></td></tr>
+      <tr><td rowspan="2">复制型<br><span class="muted">3,847 tok 结构化文本原样吐回</span></td>
+          <td>基线</td><td class="num">351.0 tok/s</td><td class="num">1.62k tok/s</td><td class="num">2.4 s</td>
+          <td><code>mixed accepted 1,113/1,251 (89.0%)<br>ngram 1,058/1,143 accepted, 77 rounds</code></td></tr>
+      <tr><td>+ngram 调参</td><td class="num">350.8 tok/s</td><td class="num">1.62k tok/s</td><td class="num">2.4 s</td>
+          <td><code>mixed accepted 1,113/1,251 (89.0%)<br>ngram 1,058/1,143 accepted, 77 rounds</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>读出来的三件事</h3>
+  <ul>
+    <li><b>调参无差别</b>：同一语料下两个配置的 ngram 接受数<b>逐字相同</b>（912/1,043 与 1,058/1,143），
+        说明 <code>--ngram-min-match 12 → 8</code>、<code>--lookup-ngram 0 → 32</code> 没有带来任何新增草稿。</li>
+    <li><b>ngram 本来就在工作</b>：复制型负载上 1,143 个 ngram 草稿中被接受 1,058 个（<b>92.5%</b>），
+        这是默认配置的贡献，不是我们调出来的。</li>
+    <li><b>负载类型比参数重要</b>：同一套配置，复制型 <b>351 tok/s</b> 比生成型 <b>275 tok/s</b> 高约 28%
+        —— 因为要输出的内容在 prompt 里已经存在，ngram 可以直接复制。
+        「让模型回显原文」的请求天生更快。</li>
+  </ul>
+
+  <h3>prefill-chunk 512 的失败原文</h3>
+  <pre>2026-10-12 12:05:34.601  ERROR engine init | FAILED while constructing the service:
+  requested Engine runtime reservation requires 1199772160 bytes,
+  but only 983359488 bytes are available for runtime capacity
+2026-10-12 12:05:34.601  FATAL server failed during startup</pre>
+  <p class="muted">差值约 206 MiB。tuned 档 <code>--kv-capacity 8192</code> 已把显存用满，
+  prefill 块翻倍会多吃运行期预留，因此 256 是这张卡上的上限。<b>不做改动。</b></p>
+
+  <h2>D 组 · 系统侧</h2>
+
+  <h3>独显占用实测排序（WMI 计数器口径，实际约 ÷1.6）</h3>
+  <table>
+    <thead><tr><th>进程</th><th class="num">计数器读数</th><th>可动性</th></tr></thead>
+    <tbody>
+      <tr><td>dwm（桌面合成）</td><td class="num">986 MB</td><td>不可动 —— 只有把显示器线插到主板才能挪到核显</td></tr>
+      <tr><td>QQ</td><td class="num">157 MB</td><td>你在用，未动</td></tr>
+      <tr><td>NVIDIA Overlay ×2</td><td class="num">148 + 104 MB</td><td>已关，但被 NVIDIA App 守护进程自动拉起</td></tr>
+      <tr><td>explorer</td><td class="num">108 MB</td><td>不可动</td></tr>
+      <tr><td>WorkBuddy</td><td class="num">80 MB</td><td>即本会话客户端</td></tr>
+      <tr><td>WidgetBoard</td><td class="num">73 MB</td><td><b>已关（未自动重启）</b></td></tr>
+      <tr><td>Intel Graphics Software</td><td class="num">60 MB</td><td><b>已关（服务仍在）</b></td></tr>
+      <tr><td>csrss / steamwebhelper / ImeService / msedgewebview2 / wallpaper64</td><td class="num">58 / 53 / 53 / 51 / 42 MB</td><td>系统进程或你在用的应用，未动</td></tr>
+      <tr><td class="muted">MuMu 四件套、GameViewer 四件套</td><td class="num">均 &lt; 20 MB</td><td><b>实测不占独显显存，未动</b></td></tr>
+    </tbody>
+  </table>
+
+  <h3>已执行</h3>
+  <div class="card">
+    <div class="kv"><span>电源计划</span><span>平衡 → <b>高性能</b>（已生效）</span></div>
+    <div class="kv"><span>关闭进程</span><span>WidgetBoard.exe、IntelGraphicsSoftware.exe（含 Services 变体）</span></div>
+    <div class="kv"><span>桌面显存</span><span>1320 MiB → <b>973 MiB</b>（引擎未运行时）</span></div>
+    <div class="kv"><span>未动</span><span>QQ、Steam、Wallpaper Engine、MuMu、GameViewer、NVIDIA App 主程序</span></div>
+  </div>
+  <p class="muted">被关掉的进程都是可自恢复的：WidgetBoard 与 Intel Graphics Software 在下次登录或重启后
+  会自行回来；NVIDIA Overlay 与 steamwebhelper 已经在自动重启（出现了新 PID），
+  要彻底关掉得退出 NVIDIA App / Steam 本体，那会打断你可能正在进行的下载或聊天，所以没做。</p>
+
+  <h2>没有改动的东西</h2>
+  <ul>
+    <li>两个启动器 <code>start-dflash-128k-tuned.bat</code> / <code>start-mtp-slim.bat</code>：<b>一个字没改</b>。</li>
+    <li>包内引擎文件、模型文件：未触碰。</li>
+    <li>设备路由 profile（<code>device-profiles.json</code>）：本来就是本卡的 calibration 结果，无需重测。</li>
+  </ul>
+
+  <h2>留给你的可选项（未测）</h2>
+  <ul>
+    <li><code>--max-shared-prefixes 0 → 7</code> 配合 <code>--auto-prefix-grid</code>：改善追问首字延迟，有显存代价。</li>
+    <li><code>--context-cache-policy rolling</code>、<code>--derive-session-keys</code>：针对单会话不断增长的场景提复用率。</li>
+    <li><code>--kv-lease-growth</code>：少预留、按需扩输出窗口，代价是池扩不动时答案会被截断。</li>
+    <li>把显示器线插到主板 HDMI/DP：能一次拿回约 620 MiB，是所有手段里唯一能根治 dwm 占用的。</li>
+  </ul>
+
+  <p class="muted" style="margin-top:28px">
+    原始日志与 spec：<code>.workbuddy/bench/spec-N0-tuned-base.*</code>、<code>spec-N1-tuned-ngram.*</code>、
+    <code>spec-N2-tuned-prefill512.*</code>、<code>run2.sh</code>、<code>mkbody.py</code>。
+    引擎完整参数表：<code>.workbuddy/_probe/engine-help.txt</code>。
+  </p>
+
+</div>
+</body>
+</html>

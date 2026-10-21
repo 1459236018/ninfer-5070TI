@@ -1,0 +1,200 @@
+NInfer 引擎包 — 模型文件说明（MODEL.txt）
+================================================================
+
+【本包不含模型】
+
+模型必须是 NInfer 专用的 `.ninfer` 单文件格式。
+**不接受 GGUF / safetensors / PyTorch / ONNX 等任何其他格式** ——
+那些格式推理由别的引擎负责，本引擎读不了。
+
+没有模型时，启动器会在第一道检查就拒绝，以【退出码 3】结束
+（REFUSE: model not found）。
+
+
+一、选模型只需满足三个条件
+----------------------------------------------------------------
+  1. **格式是 `.ninfer`**（NInfer 专用，单文件，内含权重 + tokenizer +
+     chat template + 媒体前端资源）
+  2. **该 artifact 的 identity 被这个引擎版本支持**（见第四节，怎么验证）
+  3. **权重体积装得进用户的显卡** —— 16 GB 卡上，
+     权重每少 1 GiB，KV 池就能多约 7.3 万 token（rk2v4-e8）或 5.7 万（nvfp4）（换算见第七节）
+
+  ★ 不需要非得用某个特定模型。下面给的是选型清单，任选其一即可。
+  ★ 但【不建议】混用不同来源的多个 artifact，一个引擎一次只常驻一个模型。
+
+
+二、本机当前使用的模型（仅供参考，不是强制）
+----------------------------------------------------------------
+  ★ 2026-10-16 更新：**本机现在用的是 IQ3_XXS 档**（常驻 9.71 GiB，比 IQ3_S 小 1.6 GiB
+    ⇒ 池能多开约 9 万 token）。原 IQ3_S 档的文件已不在本机，启动器在它缺失时会
+    回退到无审查档，见 start-mtp-slim.bat 顶部的 MODEL 说明。
+
+  文件名    swift15_iq3xxs_mtp.ninfer
+  字节数    11,092,478,720  (10.33 GiB)
+  常驻权重  9.71 GiB（引擎自报 `weights ready | 9.71 GiB`，2026-10-16 实测）
+  artifact  swift-1.5-qwen3.8-27b-gsq-rco-iq3xxs
+  放置位置  与 start-mtp-slim.bat 同一目录（启动器用 %ROOT% 相对定位）
+
+  ── 历史记录（2026-10-13 ~ 15 使用，现已不在本机，保留备查）──
+  文件名    gsq_rco_iq3_s_dflash2_prop.ninfer
+  字节数    15,017,456,128  (13.99 GiB)
+  SHA256    D44903147D72DD26D447CDFFE02AA33E713CFC4B7B427AF587B5D17BE8AB6496
+  常驻权重  约 11.3 GiB（实测）
+  artifact  qwen3.8-27b-gsq-rco-iq3s
+
+  这只是当初选定的一个可用档位，**不是唯一选择**。
+  该文件在公开仓库里未比对到相同 SHA256（核查过 WaveCut / redashes / raghualgt 等）。
+
+
+三、可选的公开 artifact（选型清单）
+----------------------------------------------------------------
+以下都来自 HuggingFace。**下载后务必用第五节的方法核对 SHA256。**
+换用任意一个之后，必须重跑第六节的标定流程。
+
+  ── 27B 档（能力最强，权重也最大）──
+
+  ① WaveCut/Qwen3.8-27B-GSQ-RCO-IQ3_S-NInfer-v3
+     Qwen3.8-27B-GSQ-RCO-IQ3_S-ninfer-v3.ninfer          13.99 GiB
+     sha256 29E54467CA0DDAE7E9AAC04439F72AD20DBF6DC8FB5E84833B41EC7DE9C46750
+     IQ3_S 量化档，与第二节那个同档，是最稳的替代。
+
+  ② redashes/Qwen3.8-27B-SSMFIX-apostate-GSQ-RCO-IQ3_S-NInfer
+     qwen3_8_27b_apostate_iq3s_vision_q8.ninfer          11.98 GiB
+     sha256 E27B6347B483C1C367C519530079D79B611C416CCCD9F9005FBAE241C4D1ACAD
+     小约 2 GiB，可多换出约 11 万 token 的 KV 池。
+
+  ③ raghualgt/Qwen3.8-27B-OrcaRouter-GSQ-RCO-IQ3_XXS-NInfer（三个变体）
+     qwen3.8-27b-orcarouter-iq3-xxs-mtp-only.ninfer      10.06 GiB
+       sha256 947D2C5197D72518EB1A749E7D24B22582249880F6437C76B7C1289EF8A72B08
+       最小；无视觉。模型卡称可开到 230K 上下文。
+     qwen3.8-27b-orcarouter-iq3-xxs-vision-mtp.ninfer    10.33 GiB
+       sha256 63AA158C9F749088A4CAB31B953EF6179D58CABCE73E1FF389C15FD262086B07
+       含视觉；模型卡给出 RTX 5080（16 GB）实测配置 --max-context 147456。
+     qwen3.8-27b-orcarouter-iq3-xxs-mtp-dflash2.ninfer   12.13 GiB
+       sha256 A2CF5282288289D62DFD19F2A736909C06C809ED5C476E7435E82FF7B80344ED
+       decode 最快（模型卡称短中上下文约 117 tok/s）。
+
+  ── 小模型档（权重小、池能开很大，能力弱一些）──
+
+  ④ ruwwww/qwen3.5-9b-ninfer
+     qwen3_5_9b.ninfer                                    6.07 GiB
+     sha256 见该仓库页面
+     9B 档，权重只有 27B 的一半 → 池可以开得很大。
+     ★ 能否被引擎接受需要实测（引擎只注册了部分 checkpoint）。
+
+  ── 不推荐：上游官方 artifact ──
+     neroued/* 的 nvfp4 与 groupwise-int 版本权重为 15.92 ~ 16.78 GiB，
+     **在 16 GB 卡上装不下**（可用显存约 14.9 GiB），故不列入。
+     32 GB 及以上的卡可以用。
+
+
+四、怎么验证引擎认不认某个 artifact
+----------------------------------------------------------------
+  最直接的办法：放进去启动一次，看引擎日志。
+
+  引擎启动时会校验 artifact identity。不支持时日志里会出现：
+      artifact identity 'X' is not supported by target 'Y'
+  出现这行 = 当前引擎版本不认这个模型，换一个。
+
+  检查方式：
+      python tools/probe-bat.py            # 看退出码（0 才算通过）
+      python tools/start-engine-trace.py   # 把引擎输出落到 logs/engine-trace.log 再细看
+
+
+五、校验方法
+----------------------------------------------------------------
+  Windows:
+    certutil -hashfile <模型文件> SHA256
+
+  跨平台:
+    python -c "import hashlib,sys;h=hashlib.sha256();f=open(sys.argv[1],'rb');
+    [h.update(c) for c in iter(lambda:f.read(1<<22),b'')];print(h.hexdigest().upper())" <模型文件>
+
+  校验值必须与下载来源标注的一致。不一致 = 下载损坏，别硬跑。
+
+
+六、换模型后的必做步骤
+----------------------------------------------------------------
+  1. 把新模型放到与 start-mtp-slim.bat 同目录
+  2. 若文件名不同，改启动器里的 MODEL 行（保持 %ROOT% 相对写法，不要写死盘符）
+  3. **重跑池容量标定** —— 权重体积变了，池上限一定会变：
+         python tools/autoconfig.py --report          # 先看显存账本
+         python tools/autoconfig.py --probe           # 再实测二分
+         python tools/autoconfig.py --probe --apply   # 写回启动器
+  4. 健康检查：python tools/probe-bat.py      （退出码必须是 0）
+  5. 质量回归：python tools/eval/run_eval.py --dtype nvfp4
+  6. 若换了量化档位（如 IQ3_S → IQ3_XXS），留意输出质量是否变化
+
+
+七、权重体积 → 池容量的换算（16 GB 卡实测）
+----------------------------------------------------------------
+  ★ 2026-10-21 更正：本节原来写的是 `nvfp4` 的数据。当前生产档用的是
+    `--kv-dtype rk2v4-e8`，每 token 开销约 **14.4 KiB**（196,608 token → runtime 3.68 GiB），
+    不是 18.8 KiB。**两套数都在下面，按你实际用的 dtype 选。**
+
+  `rk2v4-e8`（当前生产档）：KV runtime ≈ 0.9 GiB + 14.4 KiB/token
+      ⇒ **权重每省 1 GiB，能多开约 7.3 万 token 的池**（1 GiB ÷ 14.4 KiB ≈ 72,800）
+
+  `nvfp4`：KV 池 runtime ≈ 1.05 GiB + 18.8 KiB/token
+      ⇒ 权重每省 1 GiB，能多开约 5.7 万 token 的池（1 GiB ÷ 18.8 KiB ≈ 55,700）
+
+  完整账本、以及"为什么最终选 rk2v4-e8"，见 `AGENTS.md` 第 3 节与 4.3 节。
+
+  实测参考（RTX 5070 Ti 16 GB，权重 11.3 GiB，开 --vision，**nvfp4 旧口径**）：
+      池 106,496 -> 引擎运行后剩余约 310 MiB
+      池 114,688 -> 只剩 131 MiB（太紧，不推荐）
+      池 122,880 -> 起不来
+
+  ★ 2026-10-16 复测（换成 IQ3_XXS 权重 9.71 GiB + `--cuda-graph-allowance-mib 192`）：
+      池 184,320 -> runtime 4.23 GiB，余量 406 MiB（早期档，余量偏薄）
+      池 176,128 -> runtime 4.08 GiB，余量 516 MiB（曾在这个余量上崩过）
+      池 180,224（cg256）-> runtime 4.21 GiB，余量 476 MiB
+    ⇒ 上面那三行"106,496 / 114,688 / 122,880"是**旧权重下**的结论，已不适用。
+
+  ★ 2026-10-19 修正（关闭 hybrid 缓存后重测）：
+      池 163,840 -> runtime 3.85 GiB，余量 **约 700 MiB**
+      池 176,128 -> 余量 516 MiB（偏薄，配合 hybrid 缓存时崩过）
+    ⇒ 余量低于 700 MiB 就开始接近已知崩溃区间；**不要为了多 1 万 token 把余量压到 600 以下**。
+
+  ★ 2026-10-20 09:20 最终档：**rk2v4-e8 全稠密**（推荐，取代下面的环模式）
+      池 196,608 == 上下文，2-bit KV（约 14.4 KiB/token），runtime 3.68 GiB，free 1.02 GiB
+      → 17 万 token 请求 162 秒、**100% 保留、零丢页**（环模式同期是 318 秒 / 47%）
+      → 质量抽查（常识 / 推理 / 3 万 token 中段回忆）无损失
+      ⇒ 池等于上下文时环不介入，所有环参数（KV_WINDOW / SCORE_* / PROTECT_*）都不需要
+
+  ★ 2026-10-20 起：**环模式（fusion 引擎）** —— 池可以小于逻辑上下文了
+      设备池 163,840（--kv-capacity）+ 逻辑 262,144（--max-context）+ host KV 8,192 MiB
+      环境变量 NINFER_KV_WINDOW=163840、NINFER_HOST_PAGEABLE=1；参数 --max-shared-prefixes 0
+      → 16 万以内请求全装进池（全稠密，free 891 MiB）；超过自动降级检索（20 万 token 实测跑通）
+      ⇒ 池仍不建议超过 176,128（TDR 红线），也不建议低于 131,072（会让 14~16 万档提前变慢）
+      ※ 注意：环模式下 --host-kv-mib 与 --host-cache-mib **互斥**，不能同时写。
+
+  换小模型后这个上限会明显提高，具体值请用第六节的 autoconfig 实测。
+
+  ★ 上表基于 `--kv-dtype nvfp4`。**若该 dtype 在目标机器上不可用**（nvfp4 需要
+    Blackwell / sm_120a 的 FP4 支持），必须换用其他 KV 类型 ——
+    换完池上限会变，要重新标定。
+    **回退顺序与各档开销见 `AGENTS.md` 第 4.4 节。**
+    简版：`nvfp4` → `fp8` → `int8` → `k8v4` → `rk4v4` → `rk8v4` → `rk2v4-e8` → `bf16`（最后手段）。
+    其中 `fp8` 兼容性最广、速度也不差，通常是第一备选。
+
+
+八、为什么整包做不小（实测数据，供解释用）
+----------------------------------------------------------------
+  模型是【量化后的权重】（IQ3_S，约 3-bit），数据分布接近随机，几乎不可压缩。
+  抽样实测（前 / 中 / 后各 64 MiB）：
+
+      位置        压缩率
+      开头        0.8494
+      中间        0.9935      <- 基本压不动
+      结尾        0.9774
+      平均        0.9401
+
+  外推：模型 13.99 GiB -> 压缩后 13.15 GiB
+        引擎包（不含模型）   1.23 GiB
+        合计                 14.38 GiB
+
+  要压到 2 GB 需要约 7.2 倍压缩比，物理上做不到。
+  对照：引擎包能压到 1.5:1，是因为 exe/DLL 有大量冗余 —— 模型没有。
+
+  ** 所以正确做法是【运行时分发 + 模型单独获取】，不要试图把两者塞进一个小包。 **
