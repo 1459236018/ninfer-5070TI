@@ -116,6 +116,12 @@ start-hermes-proxy.bat      Hermes 客户端配套代理
 
 ### 1. 超池请求返回 500，而不是被拒绝
 
+> 注意区分两种「装不下」：
+> **超上下文**（`prompt` 大于 `--max-context`）→ `400 context_length_exceeded`，见下一节；
+> **超池**（`prompt + 输出` 装不进 `--kv-capacity`）→ 本节说的 500。
+> 本包默认 `--max-context` 与 `--kv-capacity` 相等（全稠密），**这种情形不会发生**；
+> 只有把池调得比上下文小才会踩到。
+
 单次请求的 `prompt + 输出` 装不进池时，日志会出现
 
 ```
