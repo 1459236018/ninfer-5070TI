@@ -1,4 +1,4 @@
-# SHA256SUMS.txt -- 2026-10-21 manifest for THIS repository.
+# SHA256SUMS.txt -- manifest for THIS repository.
 #
 # Every path is relative to the repository ROOT, with forward slashes.
 # Check from the repo root:   powershell -File verify-kit-manifest.ps1 -Kit .
@@ -8,13 +8,17 @@
 # NOT covered, by design:
 #   - engine/ninfer-serve-120a.exe  -- the engine binary is a Release asset, not in this repo.
 #     Per-file hashes for that asset are in the release attachment:
-#       ninfer-engine-pack-20261021.zip.sha256          (whole archive)
-#       ninfer-engine-pack-20261021.zip.manifest.txt    (per file)
-#   - start-*.bat, verify-*.ps1, engine/pick-engine.bat, tools/*, AGENTS.md, README.md
+#       ninfer-engine-pack-<date>.zip.sha256          (whole archive)
+#       ninfer-engine-pack-<date>.zip.manifest.txt    (per file)
+#   - start-*.bat, verify-*.ps1, engine/pick-engine.bat, tools/*, AGENTS.md, README.md,
+#     LICENSE, NOTICE
 #     -- these change as the repo evolves; pin them by commit instead.
 #
-# The previous version was the 2026-10-16 manifest and described an OLDER engine
-# (1343609856 bytes / 42CD0735...), so it could never match this pack. Rewritten 2026-10-21.
+# History: the original 2026-10-16 version described an OLDER engine
+# (1343609856 bytes / 42CD0735...) and could never match this pack.
+# Rewritten 2026-10-21; regenerated again when docs/README-128k.txt was
+# reduced to a historical-archive stub and LICENSE was replaced with the
+# full Apache-2.0 text.
 
 6C1261FCE61F9E45EF75336E471D717CA90E651ECD9AE4F275D00009E0ABBCCF  engine/avcodec-63.dll
 F4FF30EEC58AE74A0B24961FEEB692A1910EF5C342C45A00D1AC45E2FACBCA00  engine/avformat-63.dll
@@ -30,6 +34,6 @@ D1F4225DF2CD877DBF130D5668A021DCE3F94118455FF5EC952061C30AFC9CE7  engine/vcrunti
 A7146C08F89FE5B04541AB507CDB59FF7B44534D4BA3C668A426C6450A03434E  engine/vcruntime140_1.dll
 FF3879A7F78D1759303B11F591D3B8FC2ADAE9F127BEDC242B4BB8BE0AA2E022  docs/Huihui-abliterated.conversion.json
 B43A524245289019B10A706941D36D31B690A519DBA91DA8AB1AF600151F9EA9  docs/MODEL.txt
-D0598BC60FA3B22925487B8729E2B2A118F37080DE450F7183C5B5DDCD1D709F  docs/README-128k.txt
+78C957C05047EF40D622D35B9CC3F963C966FD8199CDFF91DBC046520F05679E  docs/README-128k.txt
 012801A9DC2285AF7AA1668E315DAE07AD092A869D57C12FBF7671D2156347E5  docs/README-pack.md
 628C0755359ECBD5BD157891B2D2E44A0C524C705AC9F0E5C5FCA3493868158C  docs/教程-KVMem与短测.md

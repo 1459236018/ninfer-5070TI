@@ -108,6 +108,7 @@ tools/eval/                25 条质量评测集（cases.json + run_eval.py，�
 tools/pack.py              把本包打成可分发的 zip（排除 .ninfer）
 docs/                      引擎作者与社区文档
 README-pack.md             原始包说明（英文，含引擎身份表）
+README-128k.txt            历史存档：已废弃的 dflash2 / 128k 档位，**里面的数字一律不要照抄**
 教程-KVMem与短测-给agent与使用者.md   引擎作者写的红线教程
 ```
 
