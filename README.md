@@ -233,22 +233,26 @@ ok=15  mismatch=0  missing=0  unparsed=0  crlf_only=2
 
 ### 2. 分发包（下载后核对）
 
-Release `v2026.10.21.1` 的三个附件，**发布时的 SHA256**（可直接与 GitHub 上的文件比对）：
+Release `v2026.10.21.2` 的三个附件，**发布时的 SHA256**（可直接与 GitHub 上的文件比对）：
 
 | 文件 | 字节数 | SHA256 |
 |---|---:|---|
-| `ninfer-engine-pack-20261021.zip` | 888,767,512 | `7BE668694CFD97D404096C26C3060B7BA0FB36B897E4645813D81AFC3DBC95FE` |
-| `ninfer-engine-pack-20261021.zip.manifest.txt` | 5,358 | `E534E998DEDC6179FAE8D727D92D84C1B15786C37FF350BA673CF3D1D83BCB75` |
-| `ninfer-engine-pack-20261021.zip.sha256` | 99 | `D1EB92FCC0F6BF235CB1BE9C71D88ABBBF78EB8B22F10E1C3AED7C53062D2BC8` |
+| `ninfer-engine-pack-20261021.zip` | 888,769,017 | `2C3DD29BE0C3FAFA32F75BB3708CB44D69C054AA73A4CE7099D8910BFF415DC1` |
+| `ninfer-engine-pack-20261021.zip.manifest.txt` | 5,358 | `72F434D3D050778A378118DB4C07FC68F49D8CA5930F521D2F2BA33651DA31E0` |
+| `ninfer-engine-pack-20261021.zip.sha256` | 99 | `9DE925410E4BC5DCB6F3D05615F4AAEA94DBD92A1C6F870F75D1F30C47BA02D8` |
 
 一条命令核对下载下来的 zip：
 
 ```powershell
 (Get-FileHash .\ninfer-engine-pack-20261021.zip -Algorithm SHA256).Hash
-# 应当输出 7BE668694CFD97D404096C26C3060B7BA0FB36B897E4645813D81AFC3DBC95FE
+# 应当输出 2C3DD29BE0C3FAFA32F75BB3708CB44D69C054AA73A4CE7099D8910BFF415DC1
 ```
 
-> **GitHub 附件页显示的 `847.59 MB` 是按 1024 进制算的**，与上表 888,767,512 字节是同一个东西，不是对不上。
+> **GitHub 附件页显示的 `847.59 MB` 是按 1024 进制算的**，与上表 888,769,017 字节是同一个东西，不是对不上。
+>
+> 已撤下的 `v2026.10.21.1` 里的 zip 是 888,767,512 字节、`7BE66869…`。那一版同样是合法构建，
+> 但包里的 `start-mtp-slim-silent.vbs` 是旧的坏版本（托盘脚本名少一个字母，见 `AGENTS.md` 第 0 节）。
+> **请以下表这一版为准。**
 
 ### 3. 分发包内部（逐文件）
 
@@ -256,7 +260,7 @@ zip 解开后，`.manifest.txt` 列出**包内每个文件**的 SHA256 与字节
 
 ```powershell
 Select-String -Path .\ninfer-engine-pack-20261021.zip.manifest.txt -Pattern 'AGENTS.md'
-# 6428C781906B5B2DCDBD8F7C8225BC039ADACFED778CECDDA01B9D376C4D6F5F       32779  AGENTS.md
+# B76C761E93B0194015EA88C9A6AA2DB8DB5C1A09BDDE532D5AB6A3E6095A4A4E       34755  AGENTS.md
 
 (Get-FileHash .\AGENTS.md -Algorithm SHA256).Hash
 # 与上一行那个哈希不同 => 文件被改过
