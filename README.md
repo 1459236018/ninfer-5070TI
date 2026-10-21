@@ -203,11 +203,27 @@ RTX 30/40 系（本包只带 sm_120a 引擎，需另配对应架构的二进制�
 powershell -File .\verify-kit-manifest.ps1 -Kit .
 ```
 
-正常输出：
+正常输出（工作区是 Windows 换行时）：
 
 ```
-ok=17  mismatch=0  missing=0  unparsed=0
+ok=17  mismatch=0  missing=0  unparsed=0  crlf_only=0
 ```
+
+正拖成 `git clone` 下来的仓库、且 git 把文本文件转成了 LF 时，输出会变成下面这样，**这同样是正常结果**：
+
+```
+CRLF-ONLY docs/Huihui-abliterated.conversion.json
+CRLF-ONLY docs/README-pack.md
+ok=15  mismatch=0  missing=0  unparsed=0  crlf_only=2
+```
+
+两种情况**退出码都是 0**。
+
+> **为什么要分两段：** `SHA256SUMS.txt` 里每个哈希都是**磁盘原样字节**的（解压 zip 后必须是这个结果）；
+> 而 `.gitattributes` 给文本文件标了 `text=auto`，git 内部存的是 LF，同一个文本文件因此有两个合法哈希。
+> `docs/SHA256SUMS.lf.txt` 只列**文本文件**的 LF 版哈希，作为第二段比对；DLL 这类二进制永远只按原样校验，
+> 绝不参与换行符换算（否则等于在比较一个不存在的文件，还可能掩盖单字节篡改）。
+> 第二段只在第一段失败时才用，命中记为 `CRLF-ONLY`，**不会把被改过内容的文件放过去**。
 
 ### 2. 分发包（下载后核对）
 

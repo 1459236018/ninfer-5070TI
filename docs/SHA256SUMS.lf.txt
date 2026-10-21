@@ -1,0 +1,32 @@
+# SHA256SUMS.lf.txt -- companion manifest: TEXT FILES ONLY, digests AFTER CRLF->LF normalisation.
+#
+# WHY THIS FILE EXISTS
+#   .gitattributes marks text files with `text=auto`. Git therefore stores them with LF endings,
+#   while a Windows checkout -- and the release zip, which is built from this working tree --
+#   can carry CRLF. The bytes differ, so one file legitimately has two digests.
+#   SHA256SUMS.txt records the on-disk bytes. This file records the LF-normalised bytes.
+#
+# DELIBERATELY LIMITED TO TEXT
+#   Binaries are NOT listed here, on purpose. A .dll packed with the byte pair 0x0D 0x0A uses it
+#   as machine code, not as a line break; normalising it would produce a digest for a file that
+#   does not exist, and could mask a single-byte modification. Every binary must be checked
+#   byte-exact against SHA256SUMS.txt, always. Only text files can differ by line ending alone.
+#
+# WHICH FILE TO USE
+#   - Unzipped a release archive?          use SHA256SUMS.txt   (byte-exact shipped content)
+#   - Cloned the repo and got LF endings?  this file covers the text files that differ
+#   - Running `sha256sum -c` by hand?      pick the one matching your checkout's line endings
+#
+# FORMAT
+#   Identical to SHA256SUMS.txt: `<64 hex>  <path>`, paths relative to the repository root,
+#   forward slashes, '#' lines are comments. A standard `sha256sum -c` reads this file too.
+#
+# verify-kit-manifest.ps1 checks SHA256SUMS.txt first (byte-exact, every entry). Only entries that
+# fail there are looked up in this file, and a hit is reported as CRLF-ONLY -- content identical,
+# line endings differed -- never as a pass over tampered bytes.
+
+2C9271C20488FCA124ADB3B60A6DE0B9F8AEA87E9993347937416366FA0E29E2  docs/Huihui-abliterated.conversion.json
+B43A524245289019B10A706941D36D31B690A519DBA91DA8AB1AF600151F9EA9  docs/MODEL.txt
+78C957C05047EF40D622D35B9CC3F963C966FD8199CDFF91DBC046520F05679E  docs/README-128k.txt
+8980485AF1881078C96422A0FAFA1B1062D19E374E825043AD155FCA3867E211  docs/README-pack.md
+628C0755359ECBD5BD157891B2D2E44A0C524C705AC9F0E5C5FCA3493868158C  docs/教程-KVMem与短测.md

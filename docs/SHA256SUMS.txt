@@ -5,6 +5,21 @@
 #
 # Scope: the 12 runtime DLLs beside the engine, plus the files under docs/.
 #
+# LINE ENDINGS -- read this before reporting a mismatch
+#   Every digest below is of the file EXACTLY AS IT LIES ON DISK (byte-exact). That is what an
+#   unzipped release archive contains, and it must always pass.
+#   A git checkout is a different story: .gitattributes marks text files `text=auto`, so git
+#   stores them with LF while a Windows working tree -- and the zip built from it -- carries
+#   CRLF. One text file therefore legitimately has two digests.
+#     - docs/SHA256SUMS.lf.txt   pairs each TEXT file with its digest AFTER CRLF->LF, so a
+#                                clone that came down as LF can be verified too.
+#     - verify-kit-manifest.ps1  checks this file first, byte-exact. Only for entries that fail
+#                                there does it consult the companion, and a hit is reported as
+#                                CRLF-ONLY -- never as a pass over modified bytes.
+#   Binaries are deliberately absent from the companion: a .dll packed with the byte pair
+#   0x0D 0x0A uses it as machine code, not as a line break. Normalising one would hash a file
+#   that does not exist and could mask a single-byte modification. DLLs are byte-exact, always.
+#
 # NOT covered, by design:
 #   - engine/ninfer-serve-120a.exe  -- the engine binary is a Release asset, not in this repo.
 #     Per-file hashes for that asset are in the release attachment:
@@ -13,12 +28,14 @@
 #   - start-*.bat, verify-*.ps1, engine/pick-engine.bat, tools/*, AGENTS.md, README.md,
 #     LICENSE, NOTICE
 #     -- these change as the repo evolves; pin them by commit instead.
+#   - SHA256SUMS.txt and SHA256SUMS.lf.txt themselves -- a manifest cannot contain its own
+#     digest, and a companion built from it would be circular.
 #
 # History: the original 2026-10-16 version described an OLDER engine
 # (1343609856 bytes / 42CD0735...) and could never match this pack.
 # Rewritten 2026-10-21; regenerated again when docs/README-128k.txt was
 # reduced to a historical-archive stub and LICENSE was replaced with the
-# full Apache-2.0 text.
+# full Apache-2.0 text; and again when the LINE ENDINGS note was added.
 
 6C1261FCE61F9E45EF75336E471D717CA90E651ECD9AE4F275D00009E0ABBCCF  engine/avcodec-63.dll
 F4FF30EEC58AE74A0B24961FEEB692A1910EF5C342C45A00D1AC45E2FACBCA00  engine/avformat-63.dll
@@ -35,5 +52,5 @@ A7146C08F89FE5B04541AB507CDB59FF7B44534D4BA3C668A426C6450A03434E  engine/vcrunti
 FF3879A7F78D1759303B11F591D3B8FC2ADAE9F127BEDC242B4BB8BE0AA2E022  docs/Huihui-abliterated.conversion.json
 B43A524245289019B10A706941D36D31B690A519DBA91DA8AB1AF600151F9EA9  docs/MODEL.txt
 78C957C05047EF40D622D35B9CC3F963C966FD8199CDFF91DBC046520F05679E  docs/README-128k.txt
-012801A9DC2285AF7AA1668E315DAE07AD092A869D57C12FBF7671D2156347E5  docs/README-pack.md
+D8DD8B15B8F330EF44A69434A06074197BEE2E2C76A79747DFBF477DF40B8412  docs/README-pack.md
 628C0755359ECBD5BD157891B2D2E44A0C524C705AC9F0E5C5FCA3493868158C  docs/教程-KVMem与短测.md

@@ -34,8 +34,9 @@
 | `start-mtp-slim.bat` | launcher: mtp 128k, VRAM-saving tier (port 8094, CUDA graph) |
 | `start-hermes-proxy.bat` | local proxy 8096 -> engine 8094, for Hermes Desktop |
 | `verify-arch-engine.ps1` | acceptance for THIS card: does it start, does the over-pool warning fire, does the MID-prompt answer survive |
-| `verify-kit-manifest.ps1` | checks `SHA256SUMS.txt` against the pack, byte-exact |
-| `SHA256SUMS.txt` | the manifest |
+| `verify-kit-manifest.ps1` | checks `SHA256SUMS.txt` against the pack, byte-exact; falls back to `SHA256SUMS.lf.txt` for text files whose line endings a git checkout normalised |
+| `SHA256SUMS.txt` | the manifest (digests of the files as they lie on disk) |
+| `SHA256SUMS.lf.txt` | companion manifest, TEXT FILES ONLY: same digests computed after CRLF->LF |
 
 > 2026-10-11: the three original tier launchers (`start-ptq1-mtp.bat`, `start-pq2.bat`,
 > `start-pq2-dflash.bat`) plus `start-pq2-dflash-128k.bat` / `start-pq2-mtp-128k.bat` were
@@ -55,6 +56,9 @@ launcher, or `set MODEL=D:\path\to\model.ninfer` before running a launcher.
 | built | 10/02/2026 21:47:04 |
 
 `powershell -File verify-kit-manifest.ps1 -Kit .` checks every file above against the manifest.
+Each digest is byte-exact. A git checkout stores text files with LF (`text=auto`), so a text file
+that came down that way is matched against `SHA256SUMS.lf.txt` instead and reported as `CRLF-ONLY`
+-- content identical, line endings the only difference. Binaries are never normalised.
 
 ## 3. What is fixed in THIS build (2026-10-02)
 
