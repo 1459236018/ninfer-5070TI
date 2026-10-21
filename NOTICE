@@ -86,7 +86,39 @@ precompiled cubins. PTX is present and recompilable with ptxas 13.x; see
 AGENTS.md section 0 ("关于不可改代码") for why recompiling is not recommended.
 
 --------------------------------------------------------------------------------
-5. Not included
+5. Build reproducibility (what is known, and what is NOT shipped)
+--------------------------------------------------------------------------------
+
+This section exists so a reader can judge how much of this binary is traceable.
+It does NOT ship source code, and no upstream project maintains this build.
+
+5.1  What is pinned by this repository
+     - The shipped binary itself, by hash (section 4). Only one build is
+       published: sha256 B07D9FCF...8B31891E, built 2026-10-20 07:36.
+     - The launch flags, the calibration tooling and every measured number
+       (AGENTS.md / README.md), so the *behaviour* of this build is reproducible
+       even though its source is not.
+
+5.2  What is NOT published
+     - The engine source tree. It is a local, unpublished fusion build
+       (`infer-build/fusion-arch-20261019`), not derived from a single public
+       commit that could be checked out.
+     - Upstream commit SHAs. This build is descended from the NInfer 0.11.0
+       line (1.2) but carries additional merged work (section 2) that has no
+       public counterpart, so naming a commit would be misleading.
+
+5.3  Consequence: this is NOT a reproducible build
+     Building an identical binary is not possible from public information.
+     Verify integrity by hash (section 4, and the Release `.sha256` /
+     `.manifest.txt` attachments), not by rebuilding.
+
+5.4  This build is not an official release of any upstream project
+     Nothing here is endorsed by, or supported by, the projects listed in
+     sections 1.1-1.5. Bug reports about this binary should not be filed
+     upstream. Known defects are listed in README.md under "已知问题".
+
+--------------------------------------------------------------------------------
+6. Not included
 --------------------------------------------------------------------------------
 
 No model weights are distributed here. `.ninfer` files are derived from
