@@ -102,6 +102,6 @@ above exists to prevent. `NINFER_TERNARY_KVMEM=0` (the negative control) makes t
 
 ## 6. Red lines this pack respects
 
-Nothing under `E:\betakit-lite`, `E:\betakit-ptq1-v1` or `E:\ship` was written while building it;
+Nothing under the original build machine's kit directories was written while building it;
 those stay frozen. The tier argv in the launchers is copied verbatim from those kits (read-only) so a
 tester sees the same shape, minus the env lines that the engine now defaults correctly.

@@ -45,8 +45,8 @@ The shipped binary additionally contains a merge of:
   - streaming KV: page fault-back-in and budget-based demotion, wired into the
     KVMem ring;
   - the Bonsai 27B ternary model line (qwen3_5 execution path).
-Source build root recorded in the binary: a local `infer-build/fusion-arch-20261019`
-tree. This part is not a separate public repository.
+Source build root (as recorded inside the binary): a local, unpublished
+`infer-build/fusion-arch-20261019` tree. This part is not a public repository.
 
 --------------------------------------------------------------------------------
 3. What this repository adds
