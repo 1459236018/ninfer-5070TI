@@ -1,34 +1,43 @@
 # ─────────────────────────────────────────────────────────────
 # 行尾策略
 # ─────────────────────────────────────────────────────────────
-# 教训（2026-10-21）：第一版写成 `* -text` + `*.bat binary`，但 `-text` 是「不做任何转换」，
-# 而 `binary` 展开后 = `-text -diff -merge`，两者属性名相同 ⇒ 最终只落了 `-text`，
-# 于是 `*.bat` 实际上没有受到任何保护，工作区里的 CRLF 被原样提交成了 LF。
-# 正确做法：默认 `* text=auto`（让 Git 自己判断二进制），再对 Windows 脚本显式 `-text`。
+# 目标：Git 不要自作聪明。
 #
-# `* -text`：不转换、不当作文本合并 —— 这是「Git 不要自作聪明」的总开关。
-* -text
+#   1. 默认 `* text=auto` —— 让 Git 自己决定哪个文件像文本。写 `* -text` 当默认是错的：
+#      它等于「不转换、不当作文本合并」，之后每个具体规则都得各自把 `text` 重新打开，
+#      漏一个就悄悄失效。第一版就栽在这上面：同时写了 `* -text` 和 `* text=auto`，
+#      后一行覆盖前一行，注释里那段「总开关」其实从来没生效过。
+#
+#   2. Windows 脚本逐类显式钉死，不依赖自动判断：
+#        .bat / .cmd  -> -text      cmd.exe 读 LF-only 的批处理会坏行
+#        .ps1         -> -text      保持 CRLF
+#        .vbs         -> binary     UTF-16 LE + BOM，必须完全不碰
+#
+#   3. 纯文本统一存 LF，跨平台可读、diff 干净。
+#
+# 校验这一套的是 verify-kit-manifest.ps1：它先按磁盘原样比对，只有失败时才去查
+# docs/SHA256SUMS.lf.txt 里的 LF 口径哈希，命中记作 CRLF-ONLY。
 * text=auto
 
-# 纯文本：统一存 LF（跨平台可读，diff 干净）
-*.md    text eol=lf
-*.py    text eol=lf
-*.json  text eol=lf
-*.txt   text eol=lf
-*.yml   text eol=lf
-*.html  text eol=lf
+# ── 纯文本：统一存 LF ────────────────────────────────────────
+*.md           text eol=lf
+*.py           text eol=lf
+*.json         text eol=lf
+*.txt          text eol=lf
+*.yml          text eol=lf
+*.yaml         text eol=lf
+*.html         text eol=lf
 .gitignore     text eol=lf
 .gitattributes text eol=lf
 
-# ── Windows 脚本：**必须**保留 CRLF ──────────────────────────
-# cmd.exe 对 LF-only 的 .bat 会读坏行（`-` 被当成行的开头），
-# 所以这四个 bat 一律 -text，字节原样进出。
-*.bat -text
-*.cmd -text
+# ── Windows 脚本：必须保留 CRLF，字节原样进出 ────────────────
+*.bat  -text
+*.cmd  -text
+*.ps1  -text
 
-# PowerShell / VBS / 图标：字节原样
-# start-mtp-slim-silent.vbs 是 UTF-16 LE + BOM，标成 binary 才完全不碰它。
-*.ps1    -text
-*.vbs    binary
-*.ico    binary
-*.png    binary
+# ── 二进制：完全不碰 ─────────────────────────────────────────
+# start-mtp-slim-silent.vbs 是 UTF-16 LE + BOM，标成 binary 才不会被当文本处理。
+*.vbs  binary
+*.ico  binary
+*.png  binary
+*.ninfer binary
