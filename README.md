@@ -227,7 +227,7 @@ ok=15  mismatch=0  missing=0  unparsed=0  crlf_only=2
 
 ### 2. 分发包（下载后核对）
 
-Release `v2026.10.21` 的三个附件，**发布时的 SHA256**（可直接与 GitHub 上的文件比对）：
+Release `v2026.10.21.1` 的三个附件，**发布时的 SHA256**（可直接与 GitHub 上的文件比对）：
 
 | 文件 | 字节数 | SHA256 |
 |---|---:|---|
