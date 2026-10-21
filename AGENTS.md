@@ -70,6 +70,43 @@
   （8094 是本地代理，真正的引擎在 8095，见 `tools/warmup_proxy.py`）
 - **同一时刻只能跑一个引擎实例**（一个模型常驻）
 
+### ★ 部署方式：先克隆仓库，再把 Release 的 zip 覆盖上去
+
+仓库里**不含引擎二进制**（`engine/*.exe`、`engine/*.dll` 被 `.gitignore` 挡着），
+引擎放在 GitHub Releases 的 zip 附件里。所以正确的顺序是：
+
+1. `git clone` 仓库 → 得到全部脚本、文档、工具
+2. 从 Releases 下载 `ninfer-engine-pack-20261021.zip` → 只取其中的 `engine/` 目录
+3. 把 `engine/` 合进克隆下来的仓库
+
+**zip 是仓库的超集**，里面有和仓库同名的文件。合并时要**逐文件比对**，不能整包覆盖：
+
+| 情况 | 处理 |
+|---|---|
+| 仓库没有、zip 有（主要是 `engine/` 的 13 个文件） | 补进去 |
+| 两边都有且**字节相同** | 跳过 |
+| 两边都有但**只是行尾不同**（CRLF ↔ LF） | 跳过，内容一致 |
+| 两边都有且**内容真的不同** | **保留仓库版** ← 见下 |
+
+**为什么「保留仓库版」**：zip 是某个时间点打的快照，而仓库还在往前走。
+修好的脚本没能回到已发布的 zip 里，就会造成「zip 版比仓库版旧、且旧的那版有 bug」。
+判断依据看改动内容本身 —— 谁修得更新、更全，就留谁。
+
+> 实例（2026-10-21）：已发布的 zip 里 `start-mtp-slim-silent.vbs` 是旧版，
+> 托盘脚本名少一个 `n`（`tools\infer-tray.py`）、且 `pythonw.exe` 写死在某台机器上；
+> 仓库版两者都已修好。此时**必须保留仓库版**。
+
+合并完跑一次验收（`-Kit .` 的 `ok` 数会随是否已放入 `engine/` 而不同）：
+
+```powershell
+powershell -File .\verify-kit-manifest.ps1 -Kit .
+# 只有仓库文件时：ok=5  missing=12（engine/ 的 12 条找不到，属正常）
+# 补入 engine/ 后：ok=15 missing=0 crlf_only=2（clone 场景，exit 0）
+# Windows 上直接从本机解压的包：ok=17 crlf_only=0（磁盘就是 CRLF）
+```
+
+`crlf_only>0` 是**正常**的：git 检出把 CRLF 转成 LF，内容没变，校验器认得。
+
 ### 关于"不可改代码"（2026-10-21 补充，对想深挖的人有用）
 
 引擎二进制里**确实带 PTX**（`.nv_fatb` 段，404 个模块，zstd 压缩，解压后 3.49 GiB，
