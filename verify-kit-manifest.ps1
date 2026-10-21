@@ -165,8 +165,19 @@ if ($crlfOnly -gt 0) {
   "      Content is identical. Expected for a git checkout: .gitattributes normalises to LF."
 }
 "newest covered file: $newestName  ($newest)"
-if ($null -ne $newest -and $newest -gt (Get-Item -LiteralPath $sums).LastWriteTime) {
-  "STALE: a covered file is NEWER than the manifest -- the manifest does not describe this kit."
+
+# STALE uses a tolerance. Not every unzip tool preserves per-entry timestamps -- PowerShell's
+# ZipFile.ExtractAll rewrites them all to "now" -- so a fresh, correct extraction can leave a
+# covered file a few milliseconds NEWER than the manifest. The drift this check exists to catch
+# (an engine replaced while the manifest kept its old date) is on the scale of days, so anything
+# under the tolerance is noise, not a stale manifest.
+$staleTolerance = [TimeSpan]::FromSeconds(60)
+if ($null -ne $newest) {
+  $drift = $newest - (Get-Item -LiteralPath $sums).LastWriteTime
+  if ($drift -gt $staleTolerance) {
+    "STALE: the newest covered file is $([int]$drift.TotalSeconds) s newer than the manifest."
+    "       The manifest probably does not describe this kit."
+  }
 }
 if ($mismatch -gt 0 -or $missing -gt 0 -or $unparsed -gt 0) { exit 1 }
 exit 0
